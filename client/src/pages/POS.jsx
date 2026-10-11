@@ -241,7 +241,7 @@ function MenuCard({ item, broken, onBroken, onAdd }) {
           </span>
         ) : null}
       </div>
-      <div className="flex items-end justify-between gap-2 px-3.5 py-3">
+      <div className="flex items-center justify-between gap-2 px-3.5 py-3">
         <div className="min-w-0">
           <p className="truncate font-bold text-tdcp-900">{item.name}</p>
           <p className="mt-0.5 text-sm font-semibold text-slate-500">{formatPKR(item.price)}</p>
@@ -396,23 +396,23 @@ export default function POS() {
   }
 
   return (
-    <div className="-m-3 min-h-[calc(100vh-5rem)] lg:-m-5" style={{ color: "var(--pos-text)" }}>
-      <div className="mx-auto grid max-w-[1600px] items-start gap-4 p-1 lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-5 lg:p-1">
+    <div className="min-h-full px-5 py-4 lg:px-6 lg:py-5" style={{ color: "var(--pos-text)" }}>
+      <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
         <section className="min-w-0 space-y-4">
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div>
-              <h2 className="text-3xl font-extrabold tracking-tight text-tdcp-800">Menu</h2>
-              <p className="mt-1 text-sm text-slate-500">Select a category and add items to your order</p>
+          <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+            <div className="min-w-[220px]">
+              <h2 className="text-3xl font-extrabold leading-none tracking-tight text-tdcp-800">Menu</h2>
+              <p className="mt-1.5 text-sm text-slate-500">Select a category and add items to your order</p>
             </div>
-            <div className="flex w-full items-center gap-2 sm:w-auto sm:min-w-[320px]">
-              <div className="relative flex-1">
+            <div className="flex w-full items-center gap-2 sm:w-[300px]">
+              <div className="relative min-w-0 flex-1">
                 <Search size={16} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
                   type="search"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="Search dishes..."
-                  className="w-full rounded-full border border-slate-200 bg-white py-2.5 pl-10 pr-4 text-sm outline-none placeholder:text-slate-400 focus:border-tdcp-400 focus:ring-4 focus:ring-tdcp-100"
+                  className="h-11 w-full rounded-full border border-slate-200 bg-white pl-10 pr-4 text-sm outline-none placeholder:text-slate-400 focus:border-tdcp-400 focus:ring-4 focus:ring-tdcp-100"
                 />
               </div>
               <button

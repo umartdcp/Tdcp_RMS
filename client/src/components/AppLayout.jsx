@@ -93,12 +93,12 @@ function Logo() {
   const brand = organization;
   return (
     <div className="relative px-1">
-      <BrandLogo size={76} organization={brand} className="ring-2 ring-white/30" />
+      <BrandLogo size={88} organization={brand} />
       <div className="mt-3">
         <p className="text-xl font-extrabold leading-none tracking-tight text-white">
           {brand?.code || "RMS"}
         </p>
-        <p className="mt-1 text-sm font-medium leading-snug text-white/80">
+        <p className="mt-1 text-sm font-medium leading-snug text-white/85">
           {brand?.app_name || "Restaurant Management System"}
         </p>
       </div>
@@ -139,7 +139,7 @@ export default function AppLayout() {
 
   const sidebar = (
     <>
-      <div className="relative overflow-hidden px-5 pb-4 pt-6">
+      <div className="relative shrink-0 overflow-hidden px-5 pb-3 pt-5">
         {tdcp ? null : (
           <>
             <span className="pointer-events-none absolute -right-16 -top-20 h-44 w-44 rounded-full bg-white/5" />
@@ -148,7 +148,7 @@ export default function AppLayout() {
         )}
         <Logo />
       </div>
-      <nav className="flex-1 space-y-0.5 overflow-hidden px-3 pb-2">
+      <nav className="min-h-0 flex-1 space-y-0.5 overflow-hidden px-3 pb-1">
         {(isSuperAdmin(user) ? superLinks : links.filter((link) => !link.roles || link.roles.includes(user?.role)))
           .map(({ to, label, icon: Icon, end }) => {
             if (to === "/menu") {
@@ -158,23 +158,25 @@ export default function AppLayout() {
                   <button
                     type="button"
                     onClick={() => setMenuDrop((v) => !v)}
-                    className={`group flex min-h-9 w-full items-center gap-3 rounded-xl px-3 py-1.5 text-sm font-semibold transition ${
-                      menuActive ? "text-white shadow-sm" : "text-white/70 hover:bg-white/10 hover:text-white"
+                    className={`group flex min-h-9 w-full items-center gap-3 rounded-2xl px-3 py-1.5 text-sm font-semibold text-white transition ${
+                      menuDrop
+                        ? "border border-white/45 bg-transparent"
+                        : menuActive
+                          ? "text-white shadow-sm"
+                          : "text-white/80 hover:bg-white/10"
                     }`}
-                    style={menuActive ? { background: "var(--sidebar-active)" } : undefined}
+                    style={!menuDrop && menuActive ? { background: "var(--sidebar-active)" } : undefined}
                   >
-                    <Icon size={18} strokeWidth={1.8} className="shrink-0 opacity-95" />
+                    <Icon size={18} strokeWidth={1.8} className="shrink-0" />
                     <span className="min-w-0 flex-1 truncate text-left">{label}</span>
-                    <ChevronDown size={16} className={`shrink-0 opacity-80 transition ${menuDrop ? "rotate-180" : ""}`} />
+                    <ChevronDown size={16} className={`shrink-0 transition ${menuDrop ? "rotate-180" : ""}`} />
                   </button>
                   {menuDrop ? (
-                    <div className="mt-1 space-y-1 pl-4">
+                    <div className="space-y-0.5 py-1 pl-11">
                       <NavLink
                         to="/menu/categories"
                         className={({ isActive }) =>
-                          `flex min-h-10 items-center rounded-xl px-3 text-sm font-medium ${
-                            isActive ? "bg-white/15 text-white" : "text-white/75 hover:bg-white/10 hover:text-white"
-                          }`
+                          `flex min-h-8 items-center text-sm font-medium ${isActive ? "text-white" : "text-white/90 hover:text-white"}`
                         }
                       >
                         Add category
@@ -183,9 +185,7 @@ export default function AppLayout() {
                         to="/menu"
                         end
                         className={({ isActive }) =>
-                          `flex min-h-10 items-center rounded-xl px-3 text-sm font-medium ${
-                            isActive ? "bg-white/15 text-white" : "text-white/75 hover:bg-white/10 hover:text-white"
-                          }`
+                          `flex min-h-8 items-center text-sm font-medium ${isActive ? "text-white" : "text-white/90 hover:text-white"}`
                         }
                       >
                         Add Menu
@@ -219,8 +219,8 @@ export default function AppLayout() {
           })}
       </nav>
       {tdcp ? (
-        <div className="relative mt-auto overflow-hidden px-4 pb-4 pt-2">
-          <svg className="mx-auto h-16 w-full text-[#1f7a52]" viewBox="0 0 240 110" fill="currentColor" aria-hidden="true">
+        <div className="relative mt-auto shrink-0 overflow-hidden px-4 pb-3 pt-1">
+          <svg className="mx-auto h-14 w-full text-[#1f7a52]" viewBox="0 0 240 110" fill="currentColor" aria-hidden="true">
             <path d="M0 92 28 58l18 16 22-34 16 20 20-28 24 30 18-16 26 28 28-22 40 40H0Z" opacity="0.55" />
             <path d="M18 96c8-18 14-22 18-22 6 10 10 14 16 14 8-16 16-30 22-30 4 8 10 16 16 16 6-12 12-20 18-20 8 14 14 22 22 22 6-8 12-10 16-8v28H18Z" />
             <path d="M36 78 40 70l4 8M70 64l4-10 4 10M150 70l4-8 4 8" fill="#0e4a34" />
@@ -275,7 +275,11 @@ export default function AppLayout() {
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <header
-          className="flex items-center justify-between gap-3 border-b px-4 py-3 lg:px-8 lg:py-3.5"
+          className={
+            isPos
+              ? "flex items-center justify-between gap-3 border-b px-5 py-3 lg:grid lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] lg:px-6"
+              : "flex items-center justify-between gap-3 border-b px-4 py-3 lg:px-8 lg:py-3.5"
+          }
           style={{ background: "var(--header-bg)", borderColor: "var(--header-border)", color: "var(--app-text)" }}
         >
           <div className="flex min-w-0 items-center gap-3">
@@ -307,11 +311,11 @@ export default function AppLayout() {
             )}
           </div>
           {isPos ? (
-            <p className="hidden text-sm font-medium tracking-wide text-tdcp-700/80 lg:block">
-              Good Food &nbsp;·&nbsp; Great Views &nbsp;·&nbsp; Better Moments
+            <p className="hidden justify-self-center text-center text-sm font-medium tracking-wide text-tdcp-700/80 lg:block">
+              Good Food · Great Views · Better Moments
             </p>
           ) : null}
-          <div className="flex shrink-0 items-center gap-2 sm:gap-4">
+          <div className={`flex shrink-0 items-center gap-2 sm:gap-3 ${isPos ? "justify-self-end" : ""}`}>
             {!isPos ? (
               <p className="hidden items-center gap-1.5 text-sm text-slate-500 lg:flex">
                 {tdcp ? <CalendarDays size={14} /> : <Clock size={14} />}
@@ -353,7 +357,7 @@ export default function AppLayout() {
             </div>
           </div>
         </header>
-        <main className={`min-h-0 flex-1 overflow-auto ${isPos ? "p-3 lg:p-5" : "p-4 lg:p-6"}`} style={{ background: isPos ? "var(--pos-bg)" : "transparent", color: "var(--app-text)" }}>
+        <main className={`min-h-0 flex-1 overflow-auto ${isPos ? "" : "p-4 lg:p-6"}`} style={{ background: isPos ? "var(--pos-bg)" : "transparent", color: "var(--app-text)" }}>
           <Outlet />
         </main>
         <NotificationToasts />
