@@ -1,0 +1,34 @@
+{
+  "plugins": {
+    "neon-postgres": {
+      "enabled": true
+    },
+    "firebase": {
+      "enabled": true
+    },
+    "gmail": {
+      "enabled": true
+    },
+    "context7-plugin": {
+      "enabled": true
+    },
+    "playwright": {
+      "enabled": true
+    },
+    "sentry": {
+      "enabled": true
+    },
+    "aws-core": {
+      "enabled": true
+    },
+    "vercel": {
+      "enabled": true
+    },
+    "linear": {
+      "enabled": true
+    },
+    "figma": {
+      "enabled": true
+    }
+  }
+}

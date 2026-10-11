@@ -1,0 +1,16 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: tdcp-rms-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: tdcp
+      POSTGRES_PASSWORD: tdcp123
+      POSTGRES_DB: tdcp_rms
+    ports:
+      - "5432:5432"
+    volumes:
+      - tdcp_pgdata:/var/lib/postgresql/data
+
+volumes:
+  tdcp_pgdata:

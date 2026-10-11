@@ -1,0 +1,281 @@
+@import url("https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap");
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --color-tdcp-50: #eef8f3;
+  --color-tdcp-100: #d5efe3;
+  --color-tdcp-200: #aadfca;
+  --color-tdcp-300: #6fc7a6;
+  --color-tdcp-400: #2fa87a;
+  --color-tdcp-500: #16845c;
+  --color-tdcp-600: #0f6b4a;
+  --color-tdcp-700: #0c553c;
+  --color-tdcp-800: #0a4330;
+  --color-tdcp-900: #073226;
+  --color-tdcp-950: #042016;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  background: var(--app-bg, #f3f6f4);
+  color: var(--app-text, #143028);
+  -webkit-text-size-adjust: 100%;
+  overscroll-behavior: none;
+}
+
+:root,
+html[data-theme="light"] {
+  color-scheme: light;
+  --app-bg: #f4f7fb;
+  --app-text: #1b2a4a;
+  --app-muted: #8b97a8;
+  --header-bg: #ffffff;
+  --header-border: #e8eef6;
+  --surface: #ffffff;
+  --surface-border: #e8eef6;
+  --pos-bg: #f7f8f7;
+  --pos-panel: #ffffff;
+  --pos-text: #0c553c;
+  --pos-muted: #5b7468;
+  --pos-chip: #eef8f3;
+  --pos-chip-active: #16845c;
+  --pos-card: #ffffff;
+  --pos-input: #ffffff;
+  --sidebar-bg: #0c2340;
+  --sidebar-active: #ff7a1a;
+  --sidebar-text: #ffffff;
+  --sidebar-muted: rgba(255, 255, 255, 0.78);
+}
+
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --app-bg: #0b1220;
+  --app-text: #ffffff;
+  --app-muted: rgba(255, 255, 255, 0.72);
+  --header-bg: #111827;
+  --header-border: #1f2937;
+  --surface: #111827;
+  --surface-border: #1f2937;
+  --pos-bg: #0b1220;
+  --pos-panel: #111827;
+  --pos-text: #ffffff;
+  --pos-muted: rgba(255, 255, 255, 0.72);
+  --pos-chip: #1f2937;
+  --pos-chip-active: var(--brand-secondary, #3b82f6);
+  --pos-card: #1f2937;
+  --pos-input: #0b1220;
+}
+
+html[data-theme="dark"],
+html[data-theme="dark"] body {
+  color: #ffffff;
+}
+
+.app-sidebar,
+.app-sidebar nav {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+html[data-theme="dark"] .app-sidebar {
+  background: var(--sidebar-bg) !important;
+  color: #ffffff !important;
+}
+
+html[data-theme="dark"] .bg-white {
+  background-color: var(--surface) !important;
+}
+
+html[data-theme="dark"] .bg-\[\#eef3f0\],
+html[data-theme="dark"] .bg-\[\#f4f7f5\] {
+  background-color: var(--app-bg) !important;
+}
+
+html[data-theme="dark"] .text-slate-400,
+html[data-theme="dark"] .text-slate-500,
+html[data-theme="dark"] .text-slate-600,
+html[data-theme="dark"] .text-slate-700,
+html[data-theme="dark"] .text-tdcp-600,
+html[data-theme="dark"] .text-tdcp-700,
+html[data-theme="dark"] .text-tdcp-800,
+html[data-theme="dark"] .text-tdcp-900,
+html[data-theme="dark"] .text-emerald-800,
+html[data-theme="dark"] .text-emerald-700 {
+  color: #ffffff !important;
+}
+
+html[data-theme="dark"] .border-tdcp-100,
+html[data-theme="dark"] .border-tdcp-200 {
+  border-color: #0f6b4a !important;
+}
+
+html[data-theme="dark"] .border-b {
+  border-color: var(--surface-border);
+}
+
+html[data-theme="dark"] .bg-tdcp-50 {
+  background-color: color-mix(in srgb, var(--brand-primary, #0c553c) 35%, #000) !important;
+}
+
+html[data-theme="dark"] .dash-icon {
+  background: color-mix(in srgb, var(--brand-primary, #0c553c) 40%, #000) !important;
+  color: #ffffff !important;
+}
+
+html[data-theme="dark"] .bg-slate-50,
+html[data-theme="dark"] .bg-slate-100,
+html[data-theme="dark"] .bg-slate-200 {
+  background-color: #0c553c !important;
+  color: #d5efe3 !important;
+}
+
+html[data-theme="dark"] input:not([type="checkbox"]):not([type="radio"]),
+html[data-theme="dark"] select,
+html[data-theme="dark"] textarea {
+  background-color: var(--pos-input);
+  color: var(--app-text);
+  border-color: var(--surface-border);
+}
+
+html[data-theme="dark"] .bg-emerald-50,
+html[data-theme="dark"] .bg-emerald-50\/60,
+html[data-theme="dark"] .bg-emerald-100 {
+  background-color: rgba(6, 95, 70, 0.55) !important;
+  color: #d5efe3 !important;
+}
+
+html[data-theme="dark"] .bg-amber-50,
+html[data-theme="dark"] .bg-amber-50\/60,
+html[data-theme="dark"] .bg-amber-100 {
+  background-color: rgba(120, 80, 20, 0.45) !important;
+  color: #fde68a !important;
+}
+
+html[data-theme="dark"] .bg-lime-50,
+html[data-theme="dark"] .bg-lime-50\/70 {
+  background-color: rgba(54, 83, 20, 0.5) !important;
+}
+
+html[data-theme="dark"] .bg-rose-100 {
+  background-color: rgba(127, 29, 29, 0.45) !important;
+  color: #fecaca !important;
+}
+
+html[data-theme="dark"] .bg-sky-100 {
+  background-color: rgba(12, 74, 110, 0.45) !important;
+  color: #bae6fd !important;
+}
+
+html[data-theme="dark"] .text-emerald-800,
+html[data-theme="dark"] .text-emerald-700,
+html[data-theme="dark"] .text-rose-800,
+html[data-theme="dark"] .text-amber-800,
+html[data-theme="dark"] p,
+html[data-theme="dark"] h1,
+html[data-theme="dark"] h2,
+html[data-theme="dark"] h3,
+html[data-theme="dark"] span,
+html[data-theme="dark"] label,
+html[data-theme="dark"] td,
+html[data-theme="dark"] th {
+  color: #ffffff;
+}
+
+html[data-theme="dark"] .border-emerald-200,
+html[data-theme="dark"] .border-amber-200,
+html[data-theme="dark"] .border-lime-200,
+html[data-theme="dark"] .border-slate-200 {
+  border-color: var(--surface-border) !important;
+}
+
+html[data-theme="dark"] .receipt-slip p,
+html[data-theme="dark"] .receipt-slip span,
+html[data-theme="dark"] .receipt-slip h2,
+html[data-theme="dark"] .receipt-slip label,
+html[data-theme="dark"] .receipt-slip td,
+html[data-theme="dark"] .receipt-slip th {
+  color: inherit;
+}
+html[data-theme="dark"] #tdcp-receipt,
+html[data-theme="dark"] #tdcp-receipt .bg-white,
+html[data-theme="dark"] .receipt-slip,
+html[data-theme="dark"] .receipt-slip.bg-white {
+  background-color: #ffffff !important;
+  color: #042016 !important;
+}
+
+html[data-theme="dark"] .receipt-slip .text-slate-500,
+html[data-theme="dark"] .receipt-slip .text-slate-400 {
+  color: #64748b !important;
+}
+
+.pos-cat-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 8px;
+  scrollbar-width: thin;
+  scrollbar-color: #9ca3af #d4d4d8;
+}
+
+.pos-cat-scroll::-webkit-scrollbar {
+  height: 10px;
+}
+
+.pos-cat-scroll::-webkit-scrollbar-track {
+  background: #d4d4d8;
+  border-radius: 999px;
+}
+
+.pos-cat-scroll::-webkit-scrollbar-thumb {
+  background: #9ca3af;
+  border-radius: 999px;
+}
+
+.pos-cat-scroll::-webkit-scrollbar-button:single-button {
+  display: block;
+  width: 10px;
+  height: 10px;
+  background: #d4d4d8;
+}
+
+/* Login stays on the light KitchenIQ.cloud design even when the app theme is dark. */
+html[data-theme="dark"] .login-canvas {
+  color: #1b2a4a;
+}
+html[data-theme="dark"] .login-canvas :is(p, h1, h2, h3, span, label, button, a) {
+  color: inherit;
+}
+html[data-theme="dark"] .login-canvas .bg-white,
+html[data-theme="dark"] .login-canvas .bg-white\/90,
+html[data-theme="dark"] .login-canvas .bg-white\/95 {
+  background-color: #ffffff !important;
+}
+html[data-theme="dark"] .login-canvas .text-white,
+html[data-theme="dark"] .login-canvas .login-on-navy {
+  color: #ffffff !important;
+}
+html[data-theme="dark"] .login-canvas .login-orange {
+  color: #ff7a1a !important;
+}
+html[data-theme="dark"] .login-canvas .login-navy {
+  color: #1b2a4a !important;
+}
+html[data-theme="dark"] .login-canvas .login-muted {
+  color: #64748b !important;
+}
+html[data-theme="dark"] .login-canvas input:not([type="checkbox"]):not([type="radio"]) {
+  background-color: transparent !important;
+  color: #1b2a4a !important;
+}
+
+* {
+  box-sizing: border-box;
+}
