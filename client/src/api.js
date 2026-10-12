@@ -24,7 +24,7 @@ setReplaySender((item) =>
   })
 );
 
-const SKIP_RESORT_SCOPE = ["/auth", "/restaurants", "/organizations", "/sites", "/users", "/dashboard/overview", "/audit-logs", "/platform"];
+const SKIP_RESORT_SCOPE = ["/auth", "/restaurants", "/organizations", "/sites", "/dashboard/overview", "/audit-logs", "/platform"];
 
 function skipResortScope(url = "") {
   const path = String(url).split("?")[0];
@@ -35,13 +35,17 @@ api.interceptors.request.use((config) => {
   const token = localStorage.getItem("tdcp_token");
   if (token) config.headers.Authorization = `Bearer ${token}`;
 
-  let role = "";
+  let storedUser = {};
   try {
-    role = JSON.parse(localStorage.getItem("tdcp_user") || "{}")?.role || "";
+    storedUser = JSON.parse(localStorage.getItem("tdcp_user") || "{}") || {};
   } catch {
-    role = "";
+    storedUser = {};
   }
-  const active = localStorage.getItem("tdcp_active_restaurant");
+  const role = storedUser.role || "";
+  const ownSite = storedUser.site_id || storedUser.restaurant_id || "";
+  const active = ["manager", "order_taker", "cashier", "kitchen", "staff"].includes(role)
+    ? ownSite || localStorage.getItem("tdcp_active_restaurant")
+    : localStorage.getItem("tdcp_active_restaurant") || ownSite;
   const params = { ...(config.params || {}) };
   if (params.all_restaurants || params.hq) {
     const hq = params.hq;
@@ -52,7 +56,7 @@ api.interceptors.request.use((config) => {
     return config;
   }
   const explicitSite = Object.prototype.hasOwnProperty.call(config.params || {}, "restaurant_id");
-  if (["admin", "super_admin", "org_admin"].includes(role) && active && !explicitSite && !skipResortScope(config.url || "")) {
+  if (active && !explicitSite && !skipResortScope(config.url || "")) {
     config.params = { ...params, restaurant_id: active, site_id: active };
   }
   return config;
@@ -83,17 +87,9 @@ api.interceptors.response.use(
     if (!config.__replay && isOfflineFailure(err) && canQueue(config)) {
       return queueRequest(config);
     }
-    if (err.response?.status === 401 && !String(window.location.pathname).includes("/login")) {
-      let dest = guestLoginPath();
-      try {
-        const role = JSON.parse(localStorage.getItem("tdcp_user") || "{}")?.role;
-        const org = JSON.parse(localStorage.getItem("rms_organization") || "null");
-        if (role !== "super_admin" && role !== "admin" && org?.code) {
-          dest = `/login/${String(org.code).toLowerCase()}`;
-        }
-      } catch {
-        dest = guestLoginPath();
-      }
+    const failedAuth = String(config.url || "").includes("/auth/me") || String(config.url || "").includes("/auth/login");
+    if (err.response?.status === 401 && failedAuth && !String(window.location.pathname).includes("/login")) {
+      const dest = guestLoginPath();
       localStorage.removeItem("tdcp_token");
       localStorage.removeItem("tdcp_user");
       window.location.href = dest;

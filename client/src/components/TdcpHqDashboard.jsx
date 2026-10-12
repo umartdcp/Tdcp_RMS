@@ -91,13 +91,14 @@ function StatCard({ icon: Icon, label, value, detail, faint: Faint }) {
   );
 }
 
-export default function TdcpHqDashboard() {
-  const { organization } = useAuth();
+export default function TdcpHqDashboard({ hq = true }) {
+  const { organization, site, activeRestaurant, user } = useAuth();
   const [data, setData] = useState(null);
   const [now, setNow] = useState(() => new Date());
   const [salesRange, setSalesRange] = useState("today");
   const [payRange, setPayRange] = useState("month");
-  const orgName = organization?.code || "TDCP";
+  const siteName = activeRestaurant?.name || site?.name || user?.restaurant_name || user?.site_name;
+  const orgName = hq ? organization?.code || "TDCP" : siteName || organization?.code || "TDCP";
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 1000);
@@ -107,7 +108,7 @@ export default function TdcpHqDashboard() {
   useEffect(() => {
     let alive = true;
     function load() {
-      api.get("/dashboard", { params: { hq: 1 } }).then((res) => {
+      api.get("/dashboard", { params: hq ? { hq: 1 } : {} }).then((res) => {
         if (alive) setData(res.data);
       });
     }
@@ -117,7 +118,7 @@ export default function TdcpHqDashboard() {
       alive = false;
       clearInterval(timer);
     };
-  }, []);
+  }, [hq]);
 
   const todaySeries = useMemo(() => fillHours(data?.salesSeries), [data]);
   const chartSeries = salesRange === "week" ? data?.weekSeries || [] : todaySeries;
@@ -136,7 +137,13 @@ export default function TdcpHqDashboard() {
   const kpis = data?.kpis || {};
   const sites = Number(data?.coverage?.sites) || 0;
   const active = Number(data?.coverage?.active) || 0;
-  const serviceRate = sites ? Math.round((active / sites) * 100) : 0;
+  const serviceRate = hq
+    ? sites
+      ? Math.round((active / sites) * 100)
+      : 0
+    : Number(kpis.todayOrders) + Number(kpis.pendingKitchen)
+      ? Math.round((Number(kpis.todayOrders) / (Number(kpis.todayOrders) + Number(kpis.pendingKitchen))) * 100)
+      : 0;
   const salesTotal = salesRange === "week" ? kpis.weekSales : kpis.todaySales;
   const pill =
     "rounded-full border border-[#d7efe4] bg-[#e7f7ee] px-3 py-1 text-xs font-semibold text-[#0e4a34] outline-none";
@@ -155,7 +162,9 @@ export default function TdcpHqDashboard() {
               <br />
               <span className="text-[#7dffb2]">{orgName}</span>
             </h2>
-            <p className="mt-2 text-sm text-white/85">Here&apos;s today&apos;s kitchen lineup across all your sites.</p>
+            <p className="mt-2 text-sm text-white/85">
+              {hq ? "Here's today's kitchen lineup across all your sites." : "Here's today's kitchen lineup for this site."}
+            </p>
           </div>
           <div className="relative min-w-[148px] rounded-2xl bg-white px-6 py-4 text-center text-[#16324a] shadow-sm">
             <MapPin size={16} className="mx-auto text-[#16845c]" />
@@ -180,13 +189,13 @@ export default function TdcpHqDashboard() {
           <div>
             <p className="text-sm font-bold text-[#16324a]">Service rate</p>
             <p className="mt-1 text-xs text-slate-400">
-              {active} of {sites} Organizations
+              {hq ? `${active} of ${sites} Organizations` : "Paid tickets today"}
             </p>
           </div>
         </div>
       </div>
 
-      <ResortOverviewTable />
+      {hq ? <ResortOverviewTable /> : null}
 
       <div className="grid gap-4 xl:grid-cols-3">
         <div className="rounded-[22px] bg-white p-5 shadow-sm">

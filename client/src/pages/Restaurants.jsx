@@ -376,13 +376,9 @@ export default function Restaurants() {
                 <X size={18} />
               </button>
             </div>
-            <div
-              className="mb-4 h-40 overflow-hidden rounded-2xl bg-cover bg-center"
-              style={{
-                backgroundImage: form.image_url ? `url(${form.image_url})` : "none",
-                backgroundColor: "#d5efe3",
-              }}
-            />
+            <div className="mb-4 h-40 overflow-hidden rounded-2xl bg-[#d5efe3]">
+              {form.image_url ? <img src={form.image_url} alt="" className="h-full w-full object-cover" /> : null}
+            </div>
             <div className="grid gap-3">
               <label className="text-xs font-semibold" style={{ color: "var(--app-muted)" }}>
                 Resort name
@@ -453,13 +449,11 @@ function RestaurantCard({ restaurant: r, compact, canToggle, canDelete, busy, on
       style={{ background: "var(--surface)", borderColor: "var(--surface-border)" }}
     >
       <div className={`relative ${compact ? "sm:w-56" : "sm:w-[46%]"} h-44 shrink-0 sm:h-auto min-h-[176px]`}>
-        <div
-          className="absolute inset-0 bg-cover bg-center"
-          style={{
-            backgroundImage: r.image_url ? `url(${r.image_url})` : "none",
-            backgroundColor: "#d5efe3",
-          }}
-        />
+        {r.image_url ? (
+          <img src={r.image_url} alt="" className="absolute inset-0 h-full w-full object-cover" />
+        ) : (
+          <div className="absolute inset-0 bg-[#d5efe3]" />
+        )}
         <span
           className={`absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold ${
             active ? "bg-white/90 text-emerald-700" : "bg-white/90 text-rose-600"

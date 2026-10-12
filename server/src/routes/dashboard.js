@@ -52,38 +52,38 @@ router.get("/", async (req, res) => {
     `SELECT COALESCE(SUM(total),0)::float AS sales, COUNT(*)::int AS orders,
             COALESCE(AVG(total),0)::float AS avg_ticket
      FROM orders
-     WHERE restaurant_id = ANY($1::int[]) AND payment_status='paid' AND created_at::date = CURRENT_DATE`,
+     WHERE (restaurant_id = ANY($1::int[]) OR site_id = ANY($1::int[])) AND payment_status='paid' AND created_at::date = CURRENT_DATE`,
     [siteId]
   );
   const yesterday = await query(
     `SELECT COALESCE(SUM(total),0)::float AS sales, COUNT(*)::int AS orders
      FROM orders
-     WHERE restaurant_id = ANY($1::int[]) AND payment_status='paid' AND created_at::date = CURRENT_DATE - 1`,
+     WHERE (restaurant_id = ANY($1::int[]) OR site_id = ANY($1::int[])) AND payment_status='paid' AND created_at::date = CURRENT_DATE - 1`,
     [siteId]
   );
   const pending = await query(
-    `SELECT COUNT(*)::int AS c FROM orders WHERE restaurant_id = ANY($1::int[]) AND status IN ('new','preparing')`,
+    `SELECT COUNT(*)::int AS c FROM orders WHERE (restaurant_id = ANY($1::int[]) OR site_id = ANY($1::int[])) AND status IN ('new','preparing')`,
     [siteId]
   );
   const week = await query(
     `SELECT COALESCE(SUM(total),0)::float AS sales FROM orders
-     WHERE restaurant_id = ANY($1::int[]) AND payment_status='paid' AND created_at >= NOW() - INTERVAL '7 days'`,
+     WHERE (restaurant_id = ANY($1::int[]) OR site_id = ANY($1::int[])) AND payment_status='paid' AND created_at >= NOW() - INTERVAL '7 days'`,
     [siteId]
   );
   const lastWeek = await query(
     `SELECT COALESCE(SUM(total),0)::float AS sales FROM orders
-     WHERE restaurant_id = ANY($1::int[]) AND payment_status='paid'
+     WHERE (restaurant_id = ANY($1::int[]) OR site_id = ANY($1::int[])) AND payment_status='paid'
        AND created_at >= NOW() - INTERVAL '14 days' AND created_at < NOW() - INTERVAL '7 days'`,
     [siteId]
   );
   const month = await query(
     `SELECT COALESCE(SUM(total),0)::float AS sales FROM orders
-     WHERE restaurant_id = ANY($1::int[]) AND payment_status='paid' AND created_at >= date_trunc('month', NOW())`,
+     WHERE (restaurant_id = ANY($1::int[]) OR site_id = ANY($1::int[])) AND payment_status='paid' AND created_at >= date_trunc('month', NOW())`,
     [siteId]
   );
   const lastMonth = await query(
     `SELECT COALESCE(SUM(total),0)::float AS sales FROM orders
-     WHERE restaurant_id = ANY($1::int[]) AND payment_status='paid'
+     WHERE (restaurant_id = ANY($1::int[]) OR site_id = ANY($1::int[])) AND payment_status='paid'
        AND created_at >= date_trunc('month', NOW()) - INTERVAL '1 month'
        AND created_at < date_trunc('month', NOW())`,
     [siteId]
@@ -91,7 +91,7 @@ router.get("/", async (req, res) => {
   const salesSeries = await query(
     `SELECT to_char(created_at, 'HH24:00') AS hour, COALESCE(SUM(total),0)::float AS sales
      FROM orders
-     WHERE restaurant_id = ANY($1::int[]) AND payment_status='paid' AND created_at::date = CURRENT_DATE
+     WHERE (restaurant_id = ANY($1::int[]) OR site_id = ANY($1::int[])) AND payment_status='paid' AND created_at::date = CURRENT_DATE
      GROUP BY DATE_FORMAT(created_at, '%H:00') ORDER BY DATE_FORMAT(created_at, '%H:00')`,
     [siteId]
   );
@@ -100,7 +100,7 @@ router.get("/", async (req, res) => {
             date_trunc('day', created_at) AS day,
             COALESCE(SUM(total),0)::float AS sales
      FROM orders
-     WHERE restaurant_id = ANY($1::int[]) AND payment_status='paid' AND created_at >= NOW() - INTERVAL '7 days'
+     WHERE (restaurant_id = ANY($1::int[]) OR site_id = ANY($1::int[])) AND payment_status='paid' AND created_at >= NOW() - INTERVAL '7 days'
      GROUP BY date_trunc('day', created_at), to_char(date_trunc('day', created_at), 'Mon DD')
      ORDER BY date_trunc('day', created_at)`,
     [siteId]
@@ -111,26 +111,26 @@ router.get("/", async (req, res) => {
      FROM order_items oi
      JOIN orders o ON o.id = oi.order_id
      LEFT JOIN menu_items m ON m.name = oi.name AND m.restaurant_id = o.restaurant_id
-     WHERE o.restaurant_id = ANY($1::int[]) AND o.created_at::date = CURRENT_DATE
+     WHERE (o.restaurant_id = ANY($1::int[]) OR o.site_id = ANY($1::int[])) AND o.created_at::date = CURRENT_DATE
      GROUP BY oi.name ORDER BY sold DESC LIMIT 5`,
     [siteId]
   );
   const methodsToday = await query(
     `SELECT COALESCE(payment_method,'Other') AS method, COUNT(*)::int AS count, COALESCE(SUM(total),0)::float AS amount
      FROM orders
-     WHERE restaurant_id = ANY($1::int[]) AND payment_status='paid' AND created_at::date = CURRENT_DATE
+     WHERE (restaurant_id = ANY($1::int[]) OR site_id = ANY($1::int[])) AND payment_status='paid' AND created_at::date = CURRENT_DATE
      GROUP BY COALESCE(payment_method,'Other')`,
     [siteId]
   );
   const methodsMonth = await query(
     `SELECT COALESCE(payment_method,'Other') AS method, COUNT(*)::int AS count, COALESCE(SUM(total),0)::float AS amount
      FROM orders
-     WHERE restaurant_id = ANY($1::int[]) AND payment_status='paid' AND created_at >= date_trunc('month', NOW())
+     WHERE (restaurant_id = ANY($1::int[]) OR site_id = ANY($1::int[])) AND payment_status='paid' AND created_at >= date_trunc('month', NOW())
      GROUP BY COALESCE(payment_method,'Other')`,
     [siteId]
   );
   const staff = await query(
-    `SELECT COUNT(*)::int AS c FROM users WHERE restaurant_id = ANY($1::int[]) OR site_id = ANY($1::int[])`,
+    `SELECT COUNT(*)::int AS c FROM users WHERE (restaurant_id = ANY($1::int[]) OR site_id = ANY($1::int[])) OR site_id = ANY($1::int[])`,
     [siteId]
   );
   const restaurant = Array.isArray(siteId)
@@ -194,15 +194,15 @@ router.get("/overview", async (req, res) => {
   for (const r of restaurants.rows) {
     const row = await query(
       `SELECT COALESCE(SUM(total),0)::float AS sales, COUNT(*)::int AS orders
-       FROM orders WHERE restaurant_id = ANY($1::int[]) AND payment_status='paid' AND created_at::date = CURRENT_DATE`,
+       FROM orders WHERE (restaurant_id = ANY($1::int[]) OR site_id = ANY($1::int[])) AND payment_status='paid' AND created_at::date = CURRENT_DATE`,
       [r.id]
     );
     const month = await query(
       `SELECT COALESCE(SUM(total),0)::float AS sales
-       FROM orders WHERE restaurant_id = ANY($1::int[]) AND payment_status='paid' AND created_at >= date_trunc('month', NOW())`,
+       FROM orders WHERE (restaurant_id = ANY($1::int[]) OR site_id = ANY($1::int[])) AND payment_status='paid' AND created_at >= date_trunc('month', NOW())`,
       [r.id]
     );
-    const staff = await query(`SELECT COUNT(*)::int AS c FROM users WHERE restaurant_id = ANY($1::int[]) OR site_id=$1`, [r.id]);
+    const staff = await query(`SELECT COUNT(*)::int AS c FROM users WHERE (restaurant_id = ANY($1::int[]) OR site_id = ANY($1::int[])) OR site_id=$1`, [r.id]);
     stats.push({
       ...r,
       today_sales: row.rows[0].sales,

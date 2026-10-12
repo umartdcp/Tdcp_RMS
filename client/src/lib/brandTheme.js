@@ -56,6 +56,7 @@ export function applyBrandTheme(org) {
       `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="32" fill="${primary}"/><text x="32" y="42" text-anchor="middle" font-size="32" font-family="Arial" fill="#fff">${letter}</text></svg>`
     )}`;
   }
+  if (!favicon) favicon = "/tdcp-logo.png?v=3";
   if (favicon) {
     let link = document.querySelector("link[rel='icon']");
     if (!link) {
@@ -65,10 +66,9 @@ export function applyBrandTheme(org) {
     }
     link.href = favicon;
   }
-  if (org?.app_name) document.title = org.app_name;
-  else if (org?.code === "SERVEX") document.title = "KitchenIQ.cloud";
+  document.title = org?.app_name || "TDCP Restaurant Management System";
 }
 
 export function clearBrandTheme() {
-  document.title = "KitchenIQ.cloud";
+  applyBrandTheme(null);
 }

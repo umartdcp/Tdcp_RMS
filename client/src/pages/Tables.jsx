@@ -217,7 +217,16 @@ export default function Tables() {
 
   async function load() {
     const { data } = await api.get("/tables");
-    setTables(data);
+    const siteId = Number(activeRestaurant?.id || user?.site_id || user?.restaurant_id || 0);
+    setTables(
+      (Array.isArray(data) ? data : []).filter((row) => {
+        if (!Number(row?.id)) return false;
+        if (!siteId) return true;
+        const restaurantId = Number(row.restaurant_id || 0);
+        const rowSite = Number(row.site_id || 0);
+        return restaurantId === siteId || rowSite === siteId;
+      })
+    );
   }
 
   useEffect(() => {
@@ -249,8 +258,17 @@ export default function Tables() {
   async function cycle(table) {
     const order = ["available", "occupied", "reserved", "cleaning", "maintenance"];
     const next = order[(order.indexOf(table.status) + 1) % order.length];
-    await api.patch(`/tables/${table.id}`, { status: next });
-    load();
+    try {
+      await api.patch(`/tables/${table.id}`, { status: next });
+      await load();
+    } catch (err) {
+      const missing = err.response?.status === 404 || /not found/i.test(err.response?.data?.message || "");
+      if (missing) {
+        setTables((prev) => prev.filter((row) => row.id !== table.id));
+        return;
+      }
+      window.alert(err.response?.data?.message || "Could not update this table.");
+    }
   }
 
   function openAddArea() {
@@ -286,6 +304,11 @@ export default function Tables() {
       await api.delete(`/tables/${table.id}`);
       load();
     } catch (err) {
+      const missing = err.response?.status === 404 || /not found/i.test(err.response?.data?.message || "");
+      if (missing) {
+        setTables((prev) => prev.filter((row) => row.id !== table.id));
+        return;
+      }
       window.alert(err.response?.data?.message || "Could not delete this table.");
     }
   }

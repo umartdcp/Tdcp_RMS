@@ -77,12 +77,15 @@ export function AuthProvider({ children }) {
         persistSession(res.data);
         applySession(res.data);
       })
-      .catch(() => {
+      .catch((err) => {
+        if (err?.response?.status !== 401) return;
         setUser(null);
         setOrganization(null);
         setSite(null);
         localStorage.removeItem("tdcp_token");
         localStorage.removeItem("tdcp_user");
+        localStorage.removeItem("rms_organization");
+        localStorage.removeItem("rms_site");
       })
       .finally(() => setLoading(false));
   }, []);
@@ -113,11 +116,15 @@ export function AuthProvider({ children }) {
       return;
     }
     if (!restaurants.length) return;
-    if (!activeRestaurantId || !restaurants.some((r) => String(r.id) === String(activeRestaurantId))) {
-      const next = String(user.restaurant_id || user.site_id || restaurants[0].id);
-      setActiveRestaurantId(next);
-      localStorage.setItem(ACTIVE_KEY, next);
+    const saved = String(activeRestaurantId || localStorage.getItem(ACTIVE_KEY) || "");
+    if (saved && restaurants.some((r) => String(r.id) === saved)) {
+      if (saved !== String(activeRestaurantId)) setActiveRestaurantId(saved);
+      return;
     }
+    if (saved) return;
+    const next = String(user.restaurant_id || user.site_id || restaurants[0].id);
+    setActiveRestaurantId(next);
+    localStorage.setItem(ACTIVE_KEY, next);
   }, [user, restaurants]);
 
   const activeRestaurant =

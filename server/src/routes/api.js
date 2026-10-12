@@ -18,12 +18,26 @@ const router = Router();
 router.use(authRequired);
 router.use(attachTenant);
 
-router.get("/tables", async (req, res) => {
-  const result = await query(
-    `SELECT * FROM dining_tables WHERE restaurant_id=$1 ORDER BY section, label`,
-    [rid(req)]
+async function findSiteTable(req, id) {
+  const siteId = rid(req);
+  if (!siteId || !id) return null;
+  const found = await query(
+    `SELECT * FROM dining_tables WHERE id=$1 AND (restaurant_id=$2 OR site_id=$2)`,
+    [id, siteId]
   );
-  res.json(result.rows);
+  return found.rows[0] || null;
+}
+
+router.get("/tables", async (req, res) => {
+  const siteId = rid(req);
+  if (!siteId) return res.json([]);
+  const result = await query(
+    `SELECT * FROM dining_tables
+     WHERE restaurant_id=$1 OR site_id=$1
+     ORDER BY section, label`,
+    [siteId]
+  );
+  res.json(result.rows.filter((row) => Number(row.id) > 0));
 });
 
 router.post("/tables", async (req, res) => {
@@ -59,13 +73,9 @@ router.post("/tables", async (req, res) => {
 });
 
 router.patch("/tables/:id", async (req, res) => {
-  const restaurantId = rid(req);
   const { status, label, section, seats } = req.body || {};
-  const current = await query(`SELECT * FROM dining_tables WHERE id=$1 AND restaurant_id=$2`, [
-    req.params.id,
-    restaurantId,
-  ]);
-  if (!current.rows[0]) return res.status(404).json({ message: "Table not found" });
+  const currentRow = await findSiteTable(req, req.params.id);
+  if (!currentRow) return res.status(404).json({ message: "Table not found" });
   const nextSeats = seats === "" || seats == null ? null : Number(seats);
   if (nextSeats != null && (!Number.isFinite(nextSeats) || nextSeats < 1)) {
     return res.status(400).json({ message: "Seats must be a number." });
@@ -76,31 +86,26 @@ router.patch("/tables/:id", async (req, res) => {
        label=COALESCE($2,label),
        section=COALESCE($3,section),
        seats=COALESCE($4,seats)
-     WHERE id=$5 AND restaurant_id=$6 RETURNING *`,
+     WHERE id=$5 RETURNING *`,
     [
       status || null,
       label != null ? String(label).trim() : null,
       section != null ? String(section).trim() : null,
       nextSeats,
-      req.params.id,
-      restaurantId,
+      currentRow.id,
     ]
   );
   res.json(result.rows[0]);
 });
 
 router.delete("/tables/:id", async (req, res) => {
-  const restaurantId = rid(req);
-  const current = await query(`SELECT * FROM dining_tables WHERE id=$1 AND restaurant_id=$2`, [
-    req.params.id,
-    restaurantId,
-  ]);
-  if (!current.rows[0]) return res.status(404).json({ message: "Table not found" });
-  if (current.rows[0].status === "occupied") {
+  const current = await findSiteTable(req, req.params.id);
+  if (!current) return res.status(404).json({ message: "Table not found" });
+  if (current.status === "occupied") {
     return res.status(400).json({ message: "Free this table before deleting it." });
   }
-  await query(`UPDATE orders SET table_id=NULL WHERE table_id=$1`, [req.params.id]);
-  await query(`DELETE FROM dining_tables WHERE id=$1 AND restaurant_id=$2`, [req.params.id, restaurantId]);
+  await query(`UPDATE orders SET table_id=NULL WHERE table_id=$1`, [current.id]);
+  await query(`DELETE FROM dining_tables WHERE id=$1`, [current.id]);
   res.json({ ok: true });
 });
 
@@ -266,11 +271,12 @@ router.delete("/menu/:id", async (req, res) => {
 });
 
 router.get("/orders", async (req, res) => {
+  if (!rid(req)) return res.json([]);
   const status = req.query.status;
   const params = [rid(req)];
   let sql = `SELECT o.*, t.label AS table_label
              FROM orders o LEFT JOIN dining_tables t ON t.id = o.table_id
-             WHERE o.restaurant_id=$1`;
+             WHERE (o.restaurant_id=$1 OR o.site_id=$1)`;
   if (status) {
     params.push(status);
     sql += ` AND o.status=$${params.length}`;
@@ -301,12 +307,13 @@ router.get("/orders/:id", async (req, res) => {
 });
 
 router.get("/notifications", async (req, res) => {
+  if (!rid(req)) return res.json({ items: [], counts: { pending: 0, confirmed: 0, cancelled: 0 } });
   const result = await query(
     `SELECT o.id, o.order_no, o.status, o.payment_status, o.total, o.created_at, o.updated_at,
             t.label AS table_label
      FROM orders o
      LEFT JOIN dining_tables t ON t.id = o.table_id
-     WHERE o.restaurant_id=$1
+     WHERE (o.restaurant_id=$1 OR o.site_id=$1)
        AND o.created_at >= NOW() - INTERVAL '3 days'
      ORDER BY o.updated_at DESC
      LIMIT 50`,
@@ -384,23 +391,33 @@ router.post("/orders", async (req, res) => {
 });
 
 router.patch("/orders/:id", async (req, res) => {
-  const { status, payment_method, payment_status, note } = req.body;
-      const method = payment_status === "paid" ? "Cash" : payment_method;
-      const result = await query(
-        `UPDATE orders SET
-           status=COALESCE($1,status),
-           payment_method=COALESCE($2,payment_method),
-           payment_status=COALESCE($3,payment_status),
-           note=COALESCE($4,note),
-           updated_at=NOW()
-         WHERE id=$5 AND restaurant_id=$6 RETURNING *`,
-        [status, method, payment_status, note, req.params.id, rid(req)]
-      );
+  const siteId = rid(req);
+  const { status, payment_method, payment_status, note } = req.body || {};
+  if (!siteId) return res.status(400).json({ message: "Select a site first." });
+  const owned = await query(
+    `SELECT * FROM orders WHERE id=$1 AND (restaurant_id=$2 OR site_id=$2)`,
+    [req.params.id, siteId]
+  );
+  if (!owned.rows[0]) return res.status(404).json({ message: "Order not found" });
+  const orderId = owned.rows[0].id;
+  const nextStatus = status ? String(status).toLowerCase() : null;
+  const method = payment_status === "paid" ? "Cash" : payment_method ?? null;
+  await query(
+    `UPDATE orders SET
+       status=COALESCE($1,status),
+       payment_method=COALESCE($2,payment_method),
+       payment_status=COALESCE($3,payment_status),
+       note=COALESCE($4,note),
+       updated_at=NOW()
+     WHERE id=$5`,
+    [nextStatus, method, payment_status ?? null, note ?? null, orderId]
+  );
+  const result = await query(`SELECT * FROM orders WHERE id=$1`, [orderId]);
   const order = result.rows[0];
   if (order && payment_status === "paid" && order.table_id) {
     await query(`UPDATE dining_tables SET status='cleaning' WHERE id=$1`, [order.table_id]);
   }
-  if (order && status === "cancelled" && order.table_id) {
+  if (order && (nextStatus === "cancelled" || nextStatus === "canceled") && order.table_id) {
     await query(`UPDATE dining_tables SET status='available' WHERE id=$1 AND status='occupied'`, [order.table_id]);
   }
   const items = await query(`SELECT * FROM order_items WHERE order_id=$1`, [req.params.id]);
@@ -904,8 +921,22 @@ router.post("/restaurants/:id/image", requireRole("admin", "super_admin", "org_a
   }
   const uploadsDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "../../uploads");
   fs.mkdirSync(uploadsDir, { recursive: true });
+  try {
+    fs.chmodSync(uploadsDir, 0o777);
+  } catch {
+    /* keep going and report a write error below */
+  }
   const filename = `resort-${req.params.id}-${Date.now()}.${ext}`;
-  fs.writeFileSync(path.join(uploadsDir, filename), buf);
+  const filePath = path.join(uploadsDir, filename);
+  try {
+    fs.writeFileSync(filePath, buf);
+    fs.chmodSync(filePath, 0o644);
+  } catch (err) {
+    if (err?.code === "EACCES") {
+      return res.status(500).json({ message: "The uploads folder is not writable. In cPanel File Manager, set tdcp-rms/uploads to 755 or 777." });
+    }
+    throw err;
+  }
   const image_url = `/uploads/${filename}`;
   await query(`UPDATE sites SET image_url=$1, updated_at=NOW() WHERE id=$2`, [image_url, req.params.id]);
   const row = await restaurantView(req.params.id);

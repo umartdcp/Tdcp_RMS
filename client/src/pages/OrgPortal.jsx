@@ -4,12 +4,17 @@ import api from "../api";
 import BrandLogo from "../components/BrandLogo";
 import ServexMark from "../components/ServexMark";
 import { useAuth } from "../context/AuthContext";
+import { applyBrandTheme } from "../lib/brandTheme";
 import { homePath } from "../modules/roles";
 
 export default function OrgPortal() {
   const { user } = useAuth();
   const [orgs, setOrgs] = useState([]);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    applyBrandTheme(null);
+  }, []);
 
   useEffect(() => {
     let alive = true;

@@ -1,4 +1,4 @@
-const CACHE = "tdcp-rms-v2";
+const CACHE = "tdcp-rms-v4";
 const PRECACHE = ["/", "/index.html", "/tdcp-logo.png", "/manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {

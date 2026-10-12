@@ -64,6 +64,11 @@ export async function startTdcpServer() {
 
   const uploadsDir = uploadsPath();
   fs.mkdirSync(uploadsDir, { recursive: true });
+  try {
+    fs.chmodSync(uploadsDir, 0o777);
+  } catch {
+    /* the host user may already own this folder */
+  }
 
   const app = express();
   app.set("trust proxy", 1);

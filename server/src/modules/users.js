@@ -32,7 +32,19 @@ router.get("/users", requireRole("admin", "super_admin", "org_admin", "manager")
     );
     return res.json(rows.rows);
   }
+  const siteFilter = Number(req.query.site_id || req.query.restaurant_id || rid(req) || 0);
   if (isOrgAdmin(req.user)) {
+    if (siteFilter) {
+      const rows = await query(
+        `SELECT ${USER_COLS} ${join}
+         WHERE u.organization_id=$1
+           AND COALESCE(u.site_id, u.restaurant_id)=$2
+           AND u.role <> 'super_admin'
+         ORDER BY u.id`,
+        [req.user.organization_id, siteFilter]
+      );
+      return res.json(rows.rows);
+    }
     const rows = await query(
       `SELECT ${USER_COLS} ${join} WHERE u.organization_id=$1 AND u.role <> 'super_admin' ORDER BY u.id`,
       [req.user.organization_id]
@@ -42,7 +54,8 @@ router.get("/users", requireRole("admin", "super_admin", "org_admin", "manager")
 
   const rows = await query(
     `SELECT ${USER_COLS} ${join}
-     WHERE COALESCE(u.site_id, u.restaurant_id)=$1 AND u.role IN ('order_taker','cashier','kitchen','staff')
+     WHERE COALESCE(u.site_id, u.restaurant_id)=$1
+       AND u.role IN ('manager','order_taker','cashier','kitchen','staff')
      ORDER BY u.id`,
     [req.user.site_id || req.user.restaurant_id]
   );
@@ -106,7 +119,9 @@ router.post("/users", requireRole("admin", "super_admin", "org_admin", "manager"
     });
     res.status(201).json(result.rows[0]);
   } catch (err) {
-    if (err.code === "23505") return res.status(409).json({ message: "That email is already in use." });
+    if (err.code === "23505" || err.code === "ER_DUP_ENTRY" || err.errno === 1062) {
+      return res.status(409).json({ message: "That email is already in use." });
+    }
     throw err;
   }
 });
@@ -164,7 +179,9 @@ router.patch("/users/:id", requireRole("admin", "super_admin", "org_admin", "man
     });
     res.json(result.rows[0]);
   } catch (err) {
-    if (err.code === "23505") return res.status(409).json({ message: "That email is already in use." });
+    if (err.code === "23505" || err.code === "ER_DUP_ENTRY" || err.errno === 1062) {
+      return res.status(409).json({ message: "That email is already in use." });
+    }
     throw err;
   }
 });

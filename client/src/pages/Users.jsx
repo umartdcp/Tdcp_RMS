@@ -101,7 +101,7 @@ export default function UsersPage({ organizationId, sites: sitesProp, organizati
     email: "",
     password: "",
     role: defaultCreateRole(me),
-    restaurant_id: String(siteChoices[0]?.id || activeRestaurantId || me?.site_id || me?.restaurant_id || ""),
+    restaurant_id: String(activeRestaurantId || me?.site_id || me?.restaurant_id || siteChoices[0]?.id || ""),
   });
   const [users, setUsers] = useState([]);
   const [draft, setDraft] = useState({ q: "", role: "all" });
@@ -117,12 +117,19 @@ export default function UsersPage({ organizationId, sites: sitesProp, organizati
   async function load() {
     const params = {};
     if (organizationId) params.organization_id = organizationId;
-    setUsers((await api.get("/users", { params })).data);
+    const siteId = activeRestaurantId || me?.site_id || me?.restaurant_id;
+    if (!organizationId && siteId) params.site_id = siteId;
+    const rows = (await api.get("/users", { params })).data || [];
+    setUsers(
+      siteId && !organizationId
+        ? rows.filter((u) => String(u.site_id || u.restaurant_id) === String(siteId))
+        : rows
+    );
   }
 
   useEffect(() => {
     load();
-  }, [organizationId]);
+  }, [organizationId, activeRestaurantId, me?.site_id, me?.restaurant_id]);
 
   const stats = useMemo(
     () => ({

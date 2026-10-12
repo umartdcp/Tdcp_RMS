@@ -23,6 +23,7 @@ import AuditLogs from "./modules/hq/AuditLogs";
 import PayInvoice from "./pages/PayInvoice";
 import { canAccessPath, homePath, isMainAdmin, isOrgAdmin } from "./modules/roles";
 import { guestLoginPath } from "./lib/platform";
+import { hostPortal } from "./lib/hostPortal";
 import Organizations from "./pages/Organizations";
 import OrganizationHub from "./pages/OrganizationHub";
 
@@ -53,6 +54,13 @@ function HomeIndex() {
   return <Dashboard />;
 }
 
+function HostLogin() {
+  const portal = hostPortal();
+  if (portal === "servex") return <SuperAdminLogin />;
+  if (portal === "tdcp") return <Login code="tdcp" />;
+  return <OrgPortal />;
+}
+
 function Guard({ children }) {
   const { user, loading } = useAuth();
   if (loading) {
@@ -76,7 +84,7 @@ export default function App() {
         <BrowserRouter>
           <Routes>
           <Route path="/login/servex" element={<SuperAdminLogin />} />
-          <Route path="/login" element={<OrgPortal />} />
+          <Route path="/login" element={<HostLogin />} />
           <Route path="/login/:orgCode" element={<Login />} />
           <Route path="/:orgCode/login" element={<Login />} />
           <Route

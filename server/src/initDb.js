@@ -439,6 +439,9 @@ export async function initDb() {
   );
   await query(`ALTER TABLE sites ADD COLUMN IF NOT EXISTS image_url TEXT`);
   await query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS client_ref VARCHAR(64)`);
+  await query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS updated_at DATETIME NULL`);
+  await query(`ALTER TABLE orders MODIFY table_id INT NULL`).catch(() => {});
+  await query(`ALTER TABLE orders MODIFY status VARCHAR(32) NOT NULL DEFAULT 'new'`).catch(() => {});
   await query(`CREATE UNIQUE INDEX orders_client_ref ON orders (client_ref)`).catch((err) => {
     const code = err?.mysqlCode || err?.code;
     if (code !== "ER_DUP_KEYNAME" && err?.errno !== 1061) throw err;

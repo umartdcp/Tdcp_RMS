@@ -224,8 +224,12 @@ router.get("/me", async (req, res) => {
     const user = result.rows[0];
     if (!user) return res.status(401).json({ message: "Invalid token" });
     res.json(await sessionBody(user));
-  } catch {
-    res.status(401).json({ message: "Invalid token" });
+  } catch (err) {
+    if (err?.name === "JsonWebTokenError" || err?.name === "TokenExpiredError") {
+      return res.status(401).json({ message: "Invalid token" });
+    }
+    console.error(err);
+    res.status(500).json({ message: "Could not load your session." });
   }
 });
 

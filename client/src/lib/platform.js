@@ -22,6 +22,12 @@ export function guestLoginPath() {
 }
 
 export function loginPathForSession(user, organization) {
+  if (typeof window !== "undefined") {
+    const host = window.location.hostname.toLowerCase();
+    if (host === "tdcp.kitcheniq.cloud" || host === "tdcp.kitchiq.cloud" || host === "kitcheniq.cloud" || host === "www.kitcheniq.cloud" || host === "kitchiq.cloud" || host === "www.kitchiq.cloud") {
+      return "/login";
+    }
+  }
   if (isServexUser(user) || !organization?.code) return "/login/servex";
   return `/login/${String(organization.code).toLowerCase()}`;
 }

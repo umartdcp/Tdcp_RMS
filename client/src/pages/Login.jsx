@@ -6,10 +6,11 @@ import ScenicLogin from "../components/ScenicLogin";
 import { applyBrandTheme } from "../lib/brandTheme";
 import { homePath } from "../modules/roles";
 
-export default function Login() {
+export default function Login({ code }) {
   const { login, user } = useAuth();
   const navigate = useNavigate();
-  const { orgCode } = useParams();
+  const { orgCode: paramCode } = useParams();
+  const orgCode = code || paramCode;
   const [email, setEmail] = useState(() => localStorage.getItem("servex_email") || "");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");

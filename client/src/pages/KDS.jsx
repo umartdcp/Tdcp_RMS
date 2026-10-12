@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import api from "../api";
+import { useAuth } from "../context/AuthContext";
 
 const columns = [
   { key: "new", title: "New Orders", tone: "border-emerald-200 bg-emerald-50/60" },
@@ -11,38 +12,56 @@ const nextStatus = { new: "preparing", preparing: "ready" };
 const actionLabel = { new: "Accept", preparing: "Mark Ready" };
 
 export default function KDS() {
+  const { activeRestaurantId } = useAuth();
   const [orders, setOrders] = useState([]);
 
   async function load() {
     const { data } = await api.get("/orders");
-    setOrders(data.filter((o) => ["new", "preparing", "ready"].includes(o.status) && o.payment_status !== "paid"));
+    setOrders(
+      (data || []).filter((o) => {
+        const status = String(o.status || "").toLowerCase();
+        return ["new", "preparing", "ready"].includes(status) && o.payment_status !== "paid";
+      })
+    );
   }
 
   useEffect(() => {
     load();
     const t = setInterval(load, 4000);
     return () => clearInterval(t);
-  }, []);
+  }, [activeRestaurantId]);
 
   const grouped = useMemo(() => {
     const g = { new: [], preparing: [], ready: [] };
     orders.forEach((o) => {
-      if (g[o.status]) g[o.status].push(o);
+      const status = String(o.status || "").toLowerCase();
+      if (g[status]) g[status].push(o);
     });
     return g;
   }, [orders]);
 
   async function advance(order) {
-    const status = nextStatus[order.status];
+    const current = String(order.status || "").toLowerCase();
+    const status = nextStatus[current];
     if (!status) return;
-    await api.patch(`/orders/${order.id}`, { status });
-    load();
+    setOrders((prev) => prev.map((row) => (row.id === order.id ? { ...row, status } : row)));
+    try {
+      await api.patch(`/orders/${order.id}`, { status });
+      await load();
+    } catch (err) {
+      await load();
+      window.alert(err.response?.data?.message || "Could not accept this order.");
+    }
   }
 
   async function cancel(order) {
     if (!window.confirm(`Cancel order #${order.order_no}?`)) return;
-    await api.patch(`/orders/${order.id}`, { status: "cancelled" });
-    load();
+    try {
+      await api.patch(`/orders/${order.id}`, { status: "cancelled" });
+      await load();
+    } catch (err) {
+      window.alert(err.response?.data?.message || "Could not cancel this order.");
+    }
   }
 
   return (
@@ -65,14 +84,14 @@ export default function KDS() {
                     <span className="text-slate-500">Table {order.table_label || "--"}</span>
                   </div>
                   <ul className="mt-2 space-y-1 text-sm">
-                    {order.items.map((item) => (
+                    {(order.items || []).map((item) => (
                       <li key={item.id}>
                         {item.qty} × {item.name}
                       </li>
                     ))}
                   </ul>
                   {order.note ? <p className="mt-2 text-xs text-rose-600">Note: {order.note}</p> : null}
-                  {nextStatus[order.status] ? (
+                  {nextStatus[String(order.status || "").toLowerCase()] ? (
                     <div className="mt-3 grid grid-cols-2 gap-2">
                       <button
                         type="button"
@@ -86,7 +105,7 @@ export default function KDS() {
                         onClick={() => advance(order)}
                         className="rounded-lg bg-tdcp-700 py-1.5 text-sm font-semibold text-white"
                       >
-                        {actionLabel[order.status]}
+                        {actionLabel[String(order.status || "").toLowerCase()]}
                       </button>
                     </div>
                   ) : (

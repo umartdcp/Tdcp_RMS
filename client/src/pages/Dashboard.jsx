@@ -66,7 +66,7 @@ export default function Dashboard() {
   const tickFill = isDark ? "#aadfca" : "#64748b";
 
   useEffect(() => {
-    if (isOrgAdmin(user) && isTdcpOrg(organization)) return undefined;
+    if (isTdcpOrg(organization) && !isMainAdmin(user)) return undefined;
     let alive = true;
     function load() {
       api.get("/dashboard").then((res) => {
@@ -91,8 +91,8 @@ export default function Dashboard() {
   const positive = highs.filter((n) => n > 0);
   const lowest = positive.length ? Math.min(...positive) : 0;
 
-  if (isOrgAdmin(user) && isTdcpOrg(organization)) {
-    return <TdcpHqDashboard />;
+  if (isTdcpOrg(organization) && !isMainAdmin(user)) {
+    return <TdcpHqDashboard hq={isOrgAdmin(user)} />;
   }
 
   const kpis = data?.kpis || {};
