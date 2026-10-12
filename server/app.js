@@ -1,8 +1,21 @@
-import { startTdcpServer } from "./src/index.js";
+const fs = require("node:fs");
+const path = require("node:path");
 
-startTdcpServer().catch((err) => {
-  console.error("MySQL se connect nahi ho saka.");
-  console.error(err.message);
-  console.error("Set DATABASE_URL in server/.env (mysql://kitchencloud_tdcp:Tdcp.rms%402027@127.0.0.1:3306/kitchencloud_tdcp_rms) and start MySQL.");
-  process.exit(1);
-});
+async function main() {
+  try {
+    const { startTdcpServer } = await import("./src/index.js");
+    await startTdcpServer();
+    fs.writeFileSync(path.join(__dirname, "startup-error.log"), "started\n");
+  } catch (err) {
+    const text = err && err.stack ? err.stack : String(err);
+    try {
+      fs.writeFileSync(path.join(__dirname, "startup-error.log"), text);
+    } catch {
+      /* ignore */
+    }
+    console.error(text);
+    process.exit(1);
+  }
+}
+
+main();

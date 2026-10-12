@@ -130,14 +130,6 @@ export async function startTdcpServer() {
     return true;
   }
 
-  const connected = await connectAndPrepare();
-  if (!connected) {
-    console.log("MySQL is offline. The app will keep running and sync when the database is back.");
-  }
-  setInterval(() => {
-    connectAndPrepare().catch((err) => console.error(err.message));
-  }, 8000);
-
   let port = Number(process.env.PORT || 5000);
   const host = process.env.TDCP_BIND || "0.0.0.0";
   if (process.env.TDCP_DESKTOP === "1") {
@@ -161,13 +153,24 @@ export async function startTdcpServer() {
     server.on("error", reject);
   });
 
+  connectAndPrepare()
+    .then((connected) => {
+      if (!connected) {
+        console.log("MySQL is offline. The app will keep running and sync when the database is back.");
+      }
+    })
+    .catch((err) => console.error(err.message));
+  setInterval(() => {
+    connectAndPrepare().catch((err) => console.error(err.message));
+  }, 8000);
+
   startHqSyncLoop();
   return { app, port, closeDb };
 }
 
 function isDirectCli() {
   const entry = process.argv[1] ? path.normalize(process.argv[1]) : "";
-  return /[\\/](index\.js|app\.js)$/i.test(entry);
+  return /[\\/]index\.js$/i.test(entry);
 }
 
 if (isDirectCli()) {
