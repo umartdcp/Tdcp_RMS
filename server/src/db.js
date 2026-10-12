@@ -10,6 +10,7 @@ dotenv.config({ path: process.env.TDCP_ENV_PATH || path.join(__dirname, "../.env
 let pool = null;
 let dbOnline = false;
 let lastPing = 0;
+let lastDbError = "";
 export const usingEmbeddedPostgres = false;
 
 const CONNECTION_ERRORS = new Set([
@@ -25,6 +26,10 @@ const CONNECTION_ERRORS = new Set([
 
 export function databaseOnline() {
   return dbOnline;
+}
+
+export function lastDatabaseError() {
+  return lastDbError;
 }
 
 function isConnectionError(err) {
@@ -53,6 +58,7 @@ function poolOptions() {
     database,
     waitForConnections: true,
     connectionLimit: 10,
+    connectTimeout: 5000,
     charset: "utf8mb4_unicode_ci",
     timezone: process.env.DB_TIMEZONE || "local",
     ssl: process.env.DATABASE_SSL === "true" ? { rejectUnauthorized: false } : undefined,
@@ -79,14 +85,13 @@ function normalizeValue(value) {
   return value;
 }
 
-export async function connectDb() {
-  const url = databaseUrl();
-  if (!url) {
-    throw new Error("Set DATABASE_URL in server/.env, for example mysql://tdcp:tdcp123@127.0.0.1:3306/tdcp_rms");
-  }
-  if (/^postgres(ql)?:/i.test(url)) {
-    throw new Error("DATABASE_URL still points at PostgreSQL. Use mysql://USER:PASSWORD@127.0.0.1:3306/tdcp_rms");
-  }
+function safeDbMessage(err) {
+  return String(err?.code ? `${err.code}: ${err.message || ""}` : err?.message || err || "unknown")
+    .replace(/mysql:\/\/[^@\s]+@/gi, "mysql://***@")
+    .slice(0, 240);
+}
+
+async function openPool(options) {
   if (pool) {
     try {
       await pool.end();
@@ -95,10 +100,43 @@ export async function connectDb() {
     }
     pool = null;
   }
-  pool = mysql.createPool(poolOptions());
+  pool = mysql.createPool(options);
   await pool.query("SELECT 1");
   dbOnline = true;
   lastPing = Date.now();
+  lastDbError = "";
+}
+
+export async function connectDb() {
+  const url = databaseUrl();
+  if (!url) {
+    throw new Error("DATABASE_URL is not set");
+  }
+  if (/^postgres(ql)?:/i.test(url)) {
+    throw new Error("DATABASE_URL still points at PostgreSQL. Use mysql://USER:PASSWORD@127.0.0.1:3306/tdcp_rms");
+  }
+  const base = poolOptions();
+  const attempts = [base];
+  if (base.host === "localhost" || base.host === "127.0.0.1") {
+    const socketOptions = { ...base };
+    delete socketOptions.host;
+    delete socketOptions.port;
+    for (const socketPath of ["/var/lib/mysql/mysql.sock", "/tmp/mysql.sock", "/var/run/mysqld/mysqld.sock"]) {
+      attempts.push({ ...socketOptions, socketPath });
+    }
+    if (base.host !== "127.0.0.1") attempts.push({ ...base, host: "127.0.0.1" });
+  }
+  let last;
+  for (const options of attempts) {
+    try {
+      await openPool(options);
+      return;
+    } catch (err) {
+      last = err;
+      lastDbError = safeDbMessage(err);
+    }
+  }
+  throw last;
 }
 
 export async function ensureDb() {
@@ -118,9 +156,8 @@ export async function ensureDb() {
     return true;
   } catch (err) {
     dbOnline = false;
-    if (!isConnectionError(err) && !/access denied|ER_ACCESS_DENIED/i.test(String(err?.message || ""))) {
-      console.error(err.message);
-    }
+    lastDbError = safeDbMessage(err);
+    console.error(lastDbError);
     return false;
   }
 }

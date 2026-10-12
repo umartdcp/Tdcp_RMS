@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import cors from "cors";
 import dotenv from "dotenv";
 import express from "express";
-import { closeDb, ensureDb } from "./db.js";
+import { closeDb, ensureDb, lastDatabaseError } from "./db.js";
 import { initDb } from "./initDb.js";
 import authRoutes from "./routes/auth.js";
 import dashboardRoutes from "./routes/dashboard.js";
@@ -77,7 +77,12 @@ export async function startTdcpServer() {
 
   app.get("/api/health", async (_req, res) => {
     const db = await ensureDb();
-    res.json({ ok: true, service: "RMS API", db: db ? "up" : "down" });
+    res.json({
+      ok: true,
+      service: "RMS API",
+      db: db ? "up" : "down",
+      ...(db ? {} : { reason: lastDatabaseError() }),
+    });
   });
 
   app.use("/api/auth", authRoutes);
