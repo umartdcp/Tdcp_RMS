@@ -4,7 +4,8 @@ import { useAuth } from "../context/AuthContext";
 import ScenicLogin from "../components/ScenicLogin";
 import { applyBrandTheme } from "../lib/brandTheme";
 import { SERVEX } from "../lib/platform";
-import { homePath } from "../modules/roles";
+import { canAccessPath, homePath } from "../modules/roles";
+import { consumeReturnPath } from "../lib/platform";
 
 export default function SuperAdminLogin() {
   const { login, user } = useAuth();
@@ -24,7 +25,8 @@ export default function SuperAdminLogin() {
     setError("");
     try {
       const signedIn = await login(email, password, undefined, "auto");
-      navigate(homePath(signedIn));
+      const back = consumeReturnPath("");
+      navigate(back && canAccessPath(signedIn, back) ? back : homePath(signedIn));
     } catch (err) {
       setError(
         err.response?.data?.message ||
@@ -37,7 +39,10 @@ export default function SuperAdminLogin() {
     }
   }
 
-  if (user) return <Navigate to={homePath(user)} replace />;
+  if (user) {
+    const back = consumeReturnPath("");
+    return <Navigate to={back && canAccessPath(user, back) ? back : homePath(user)} replace />;
+  }
 
   return (
     <ScenicLogin

@@ -4,7 +4,8 @@ import api from "../api";
 import { useAuth } from "../context/AuthContext";
 import ScenicLogin from "../components/ScenicLogin";
 import { applyBrandTheme } from "../lib/brandTheme";
-import { homePath } from "../modules/roles";
+import { canAccessPath, homePath } from "../modules/roles";
+import { consumeReturnPath } from "../lib/platform";
 
 export default function Login({ code }) {
   const { login, user } = useAuth();
@@ -35,7 +36,8 @@ export default function Login({ code }) {
     setError("");
     try {
       const signedIn = await login(email, password, org?.code || orgCode, "org");
-      navigate(homePath(signedIn));
+      const back = consumeReturnPath("");
+      navigate(back && canAccessPath(signedIn, back) ? back : homePath(signedIn));
     } catch (err) {
       setError(
         err.response?.data?.message ||
@@ -48,7 +50,10 @@ export default function Login({ code }) {
     }
   }
 
-  if (user) return <Navigate to={homePath(user)} replace />;
+  if (user) {
+    const back = consumeReturnPath("");
+    return <Navigate to={back && canAccessPath(user, back) ? back : homePath(user)} replace />;
+  }
   if (String(orgCode || "").toLowerCase() === "servex") return <Navigate to="/login/servex" replace />;
 
   const name = org?.app_name || org?.name || "your restaurant";

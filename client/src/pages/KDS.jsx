@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import api from "../api";
 import { useAuth } from "../context/AuthContext";
 
@@ -14,8 +14,11 @@ const actionLabel = { new: "Accept", preparing: "Mark Ready" };
 export default function KDS() {
   const { activeRestaurantId } = useAuth();
   const [orders, setOrders] = useState([]);
+  const [error, setError] = useState("");
+  const saving = useRef(false);
 
   async function load() {
+    if (saving.current) return;
     const { data } = await api.get("/orders");
     setOrders(
       (data || []).filter((o) => {
@@ -44,13 +47,16 @@ export default function KDS() {
     const current = String(order.status || "").toLowerCase();
     const status = nextStatus[current];
     if (!status) return;
+    saving.current = true;
+    setError("");
     setOrders((prev) => prev.map((row) => (row.id === order.id ? { ...row, status } : row)));
     try {
       await api.patch(`/orders/${order.id}`, { status });
-      await load();
     } catch (err) {
+      setError(err.response?.data?.message || "Could not accept this order.");
+    } finally {
+      saving.current = false;
       await load();
-      window.alert(err.response?.data?.message || "Could not accept this order.");
     }
   }
 
@@ -69,6 +75,7 @@ export default function KDS() {
       <div className="mb-4 flex items-center justify-between">
         <h2 className="text-lg font-bold">Kitchen Display System (KDS)</h2>
       </div>
+      {error ? <p className="mb-3 rounded-xl bg-rose-50 px-3 py-2 text-sm font-medium text-rose-600">{error}</p> : null}
       <div className="grid gap-4 xl:grid-cols-3">
         {columns.map((col) => (
           <div key={col.key} className={`rounded-2xl border p-3 ${col.tone}`}>

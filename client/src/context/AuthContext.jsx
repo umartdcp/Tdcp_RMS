@@ -146,8 +146,13 @@ export function AuthProvider({ children }) {
       setActiveRestaurant: (id) => {
         const next = id ? String(id) : "";
         setActiveRestaurantId(next);
-        if (next) localStorage.setItem(ACTIVE_KEY, next);
-        else localStorage.removeItem(ACTIVE_KEY);
+        if (next) {
+          localStorage.setItem(ACTIVE_KEY, next);
+          localStorage.setItem("tdcp_site_pinned", "1");
+        } else {
+          localStorage.removeItem(ACTIVE_KEY);
+          localStorage.removeItem("tdcp_site_pinned");
+        }
         const match = restaurants.find((r) => String(r.id) === next);
         if (match) {
           setSite({
@@ -170,6 +175,7 @@ export function AuthProvider({ children }) {
         if (!canSwitchSites(data.user)) {
           const id = String(data.user.site_id || data.user.restaurant_id || "");
           localStorage.setItem(ACTIVE_KEY, id);
+          localStorage.setItem("tdcp_site_pinned", "1");
           setActiveRestaurantId(id);
         }
         return data.user;
@@ -181,6 +187,7 @@ export function AuthProvider({ children }) {
         localStorage.removeItem("rms_site");
         localStorage.removeItem("rms_permissions");
         localStorage.removeItem(ACTIVE_KEY);
+        localStorage.removeItem("tdcp_site_pinned");
         setActiveRestaurantId("");
         setUser(null);
         setOrganization(null);

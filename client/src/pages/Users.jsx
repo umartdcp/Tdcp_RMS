@@ -91,7 +91,8 @@ function initialOf(name) {
 }
 
 export default function UsersPage({ organizationId, sites: sitesProp, organization }) {
-  const { user: me, restaurants, activeRestaurantId } = useAuth();
+  const { user: me, restaurants, activeRestaurant, activeRestaurantId } = useAuth();
+  const lockedSite = !isMainAdmin(me);
   const siteChoices = (sitesProp && sitesProp.length ? sitesProp : restaurants).filter(
     (s) => !organizationId || Number(s.organization_id) === Number(organizationId) || !s.organization_id
   );
@@ -220,7 +221,10 @@ export default function UsersPage({ organizationId, sites: sitesProp, organizati
       next.password = "Password must be at least 6 characters.";
     }
     const needsSite = form.role !== "org_admin" && form.role !== "super_admin";
-    if (needsSite && !form.restaurant_id) next.restaurant_id = "Select a site.";
+    const lockedId = Number(activeRestaurantId || me?.site_id || me?.restaurant_id || 0);
+    if (needsSite && !(lockedSite ? lockedId : form.restaurant_id)) {
+      next.restaurant_id = "Open this site before adding staff.";
+    }
     setFieldErrors(next);
     if (Object.keys(next).length || busy) return;
     setBusy(true);
@@ -233,9 +237,10 @@ export default function UsersPage({ organizationId, sites: sitesProp, organizati
       };
       if (form.password) payload.password = form.password;
       if (organizationId) payload.organization_id = Number(organizationId);
-      if (form.restaurant_id && form.role !== "org_admin") {
-        payload.restaurant_id = Number(form.restaurant_id);
-        payload.site_id = Number(form.restaurant_id);
+      const chosenSite = lockedSite ? lockedId : Number(form.restaurant_id || 0);
+      if (form.role !== "org_admin" && form.role !== "super_admin" && chosenSite) {
+        payload.restaurant_id = chosenSite;
+        payload.site_id = chosenSite;
       }
       if (modal === "edit") await api.patch(`/users/${form.id}`, payload);
       else await api.post("/users", payload);
@@ -556,24 +561,33 @@ export default function UsersPage({ organizationId, sites: sitesProp, organizati
                 </select>
               </label>
               {form.role !== "org_admin" && form.role !== "super_admin" ? (
-                <label className="text-xs font-semibold" style={{ color: "var(--app-muted)" }}>
-                  Site
-                  <select
-                    required
-                    className={`${fieldClass} mt-1`}
-                    style={inputStyle}
-                    value={form.restaurant_id}
-                    onChange={(e) => setForm({ ...form, restaurant_id: e.target.value })}
-                  >
-                    <option value="">Select site</option>
-                    {siteChoices.map((r) => (
-                      <option key={r.id} value={r.id}>
-                        {r.name}
-                      </option>
-                    ))}
-                  </select>
-                  <FieldError message={fieldErrors.restaurant_id} />
-                </label>
+                lockedSite ? (
+                  <div>
+                    <p className="rounded-xl bg-tdcp-50 px-3 py-2 text-sm font-semibold text-tdcp-800">
+                      Site: {activeRestaurant?.name || me?.restaurant_name || "this site"}
+                    </p>
+                    <FieldError message={fieldErrors.restaurant_id} />
+                  </div>
+                ) : (
+                  <label className="text-xs font-semibold" style={{ color: "var(--app-muted)" }}>
+                    Site
+                    <select
+                      required
+                      className={`${fieldClass} mt-1`}
+                      style={inputStyle}
+                      value={form.restaurant_id}
+                      onChange={(e) => setForm({ ...form, restaurant_id: e.target.value })}
+                    >
+                      <option value="">Select site</option>
+                      {siteChoices.map((r) => (
+                        <option key={r.id} value={r.id}>
+                          {r.name}
+                        </option>
+                      ))}
+                    </select>
+                    <FieldError message={fieldErrors.restaurant_id} />
+                  </label>
+                )
               ) : null}
               {error ? <p className="text-sm font-medium text-rose-500">{error}</p> : null}
             </div>

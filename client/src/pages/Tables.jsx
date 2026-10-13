@@ -302,7 +302,8 @@ export default function Tables() {
     if (!window.confirm(`Remove table ${table.label} from ${restaurantName}?`)) return;
     try {
       await api.delete(`/tables/${table.id}`);
-      load();
+      setTables((prev) => prev.filter((row) => row.id !== table.id));
+      setFloor((prev) => (prev ? { ...prev, list: prev.list.filter((row) => row.id !== table.id) } : prev));
     } catch (err) {
       const missing = err.response?.status === 404 || /not found/i.test(err.response?.data?.message || "");
       if (missing) {

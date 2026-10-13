@@ -63,6 +63,7 @@ export default function Dashboard() {
   const { isDark } = useTheme();
   const notify = useNotifications();
   const { user, organization, activeRestaurantId } = useAuth();
+  const sitePinned = Boolean(activeRestaurantId) && localStorage.getItem("tdcp_site_pinned") === "1";
   const tickFill = isDark ? "#aadfca" : "#64748b";
 
   useEffect(() => {
@@ -92,7 +93,7 @@ export default function Dashboard() {
   const lowest = positive.length ? Math.min(...positive) : 0;
 
   if (isTdcpOrg(organization) && !isMainAdmin(user)) {
-    return <TdcpHqDashboard hq={isOrgAdmin(user)} />;
+    return <TdcpHqDashboard hq={isOrgAdmin(user) && !sitePinned} />;
   }
 
   const kpis = data?.kpis || {};

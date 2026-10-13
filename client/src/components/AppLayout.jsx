@@ -31,7 +31,7 @@ import BrandLogo from "./BrandLogo";
 import ServexMark from "./ServexMark";
 import ThemeToggle from "./ThemeToggle";
 import NotificationBell, { NotificationToasts } from "./NotificationBell";
-import { loginPathForSession } from "../lib/platform";
+import { loginPathForSession, rememberPath } from "../lib/platform";
 import { isTdcpOrg } from "../lib/orgBranding";
 
 const superLinks = [
@@ -46,11 +46,11 @@ const superLinks = [
 const links = [
   { to: "/organizations", label: "Organizations", icon: Building2, roles: ["super_admin", "admin"] },
   { to: "/", label: "Dashboard", icon: Home, roles: ["org_admin", "manager"] },
-  { to: "/pos", label: "POS", icon: ShoppingCart, roles: ["manager", "order_taker", "cashier"] },
-  { to: "/tables", label: "Tables", icon: Grid3x3, roles: ["manager", "order_taker"] },
-  { to: "/orders", label: "Orders", icon: ClipboardList, roles: ["manager", "order_taker", "cashier"] },
-  { to: "/menu", label: "Menu", icon: UtensilsCrossed, roles: ["manager", "order_taker"] },
-  { to: "/kds", label: "Kitchen (KDS)", icon: ChefHat, roles: ["manager", "kitchen"] },
+  { to: "/pos", label: "POS", icon: ShoppingCart, roles: ["org_admin", "manager", "order_taker", "cashier"] },
+  { to: "/tables", label: "Tables", icon: Grid3x3, roles: ["org_admin", "manager", "order_taker"] },
+  { to: "/orders", label: "Orders", icon: ClipboardList, roles: ["org_admin", "manager", "order_taker", "cashier"] },
+  { to: "/menu", label: "Menu", icon: UtensilsCrossed, roles: ["org_admin", "manager", "order_taker"] },
+  { to: "/kds", label: "Kitchen (KDS)", icon: ChefHat, roles: ["org_admin", "manager", "kitchen"] },
   { to: "/customers", label: "Customers", icon: UserRound, roles: ["org_admin", "manager"] },
   { to: "/reports", label: "Reports", icon: ChartColumn, roles: ["org_admin", "manager"] },
   { to: "/audit-logs", label: "Audit Logs", icon: ScrollText, roles: ["org_admin", "manager"] },
@@ -127,6 +127,7 @@ export default function AppLayout() {
     setMenuOpen(false);
     setAccountOpen(false);
     if (!location.pathname.startsWith("/menu")) setMenuDrop(false);
+    rememberPath(location.pathname);
   }, [location.pathname]);
 
   useEffect(() => {

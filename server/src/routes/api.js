@@ -42,6 +42,7 @@ router.get("/tables", async (req, res) => {
 
 router.post("/tables", async (req, res) => {
   const restaurantId = rid(req);
+  if (!restaurantId) return res.status(400).json({ message: "Select a site first." });
   const section = String(req.body.section || "").trim();
   if (!section) return res.status(400).json({ message: "Area name is required." });
   const seats = Math.max(1, Math.min(20, Number(req.body.seats || 4)));

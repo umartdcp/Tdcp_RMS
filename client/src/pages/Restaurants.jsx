@@ -168,8 +168,10 @@ export default function Restaurants() {
         reader.readAsDataURL(file);
       });
       const { data } = await api.post(`/restaurants/${editing.id}/image`, { image_base64 });
-      setForm((f) => ({ ...f, image_url: data.image_url }));
-      setEditing((prev) => ({ ...prev, ...data }));
+      const preview = data.image_url || image_base64;
+      setForm((f) => ({ ...f, image_url: preview }));
+      setEditing((prev) => ({ ...prev, ...data, image_url: preview }));
+      setRows((prev) => prev.map((row) => (row.id === editing.id ? { ...row, ...data, image_url: preview } : row)));
       await load();
       await refreshRestaurants?.();
     } catch (err) {
@@ -377,7 +379,18 @@ export default function Restaurants() {
               </button>
             </div>
             <div className="mb-4 h-40 overflow-hidden rounded-2xl bg-[#d5efe3]">
-              {form.image_url ? <img src={form.image_url} alt="" className="h-full w-full object-cover" /> : null}
+              {form.image_url ? (
+                <img
+                  src={form.image_url}
+                  alt=""
+                  className="h-full w-full object-cover"
+                  onError={(e) => {
+                    e.currentTarget.style.display = "none";
+                  }}
+                />
+              ) : (
+                <div className="grid h-full place-items-center text-sm text-slate-500">Photo preview</div>
+              )}
             </div>
             <div className="grid gap-3">
               <label className="text-xs font-semibold" style={{ color: "var(--app-muted)" }}>
@@ -448,12 +461,10 @@ function RestaurantCard({ restaurant: r, compact, canToggle, canDelete, busy, on
       className={`overflow-hidden rounded-3xl border ${compact ? "sm:flex" : "flex flex-col sm:flex-row"}`}
       style={{ background: "var(--surface)", borderColor: "var(--surface-border)" }}
     >
-      <div className={`relative ${compact ? "sm:w-56" : "sm:w-[46%]"} h-44 shrink-0 sm:h-auto min-h-[176px]`}>
+      <div className={`relative h-44 shrink-0 overflow-hidden bg-[#d5efe3] ${compact ? "sm:w-56" : "sm:w-[46%]"}`}>
         {r.image_url ? (
-          <img src={r.image_url} alt="" className="absolute inset-0 h-full w-full object-cover" />
-        ) : (
-          <div className="absolute inset-0 bg-[#d5efe3]" />
-        )}
+          <img src={r.image_url} alt="" className="h-full w-full object-cover" />
+        ) : null}
         <span
           className={`absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold ${
             active ? "bg-white/90 text-emerald-700" : "bg-white/90 text-rose-600"

@@ -89,10 +89,14 @@ api.interceptors.response.use(
     }
     const failedAuth = String(config.url || "").includes("/auth/me") || String(config.url || "").includes("/auth/login");
     if (err.response?.status === 401 && failedAuth && !String(window.location.pathname).includes("/login")) {
-      const dest = guestLoginPath();
+      try {
+        sessionStorage.setItem("tdcp_return_path", window.location.pathname);
+      } catch {
+        /* ignore */
+      }
       localStorage.removeItem("tdcp_token");
       localStorage.removeItem("tdcp_user");
-      window.location.href = dest;
+      window.location.href = guestLoginPath();
     }
     return Promise.reject(err);
   }

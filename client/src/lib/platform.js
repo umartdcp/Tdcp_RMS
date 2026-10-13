@@ -17,8 +17,32 @@ export function isServexUser(user) {
   return user?.role === "super_admin" || user?.role === "admin";
 }
 
+const RETURN_KEY = "tdcp_return_path";
+
 export function guestLoginPath() {
   return "/login";
+}
+
+export function rememberPath(pathname) {
+  const path = String(pathname || "");
+  if (!path || path.startsWith("/login")) return;
+  try {
+    sessionStorage.setItem(RETURN_KEY, path);
+  } catch {
+    /* ignore */
+  }
+}
+
+export function consumeReturnPath(fallback) {
+  let saved = "";
+  try {
+    saved = sessionStorage.getItem(RETURN_KEY) || "";
+    sessionStorage.removeItem(RETURN_KEY);
+  } catch {
+    saved = "";
+  }
+  if (saved && !saved.startsWith("/login")) return saved;
+  return fallback;
 }
 
 export function loginPathForSession(user, organization) {
