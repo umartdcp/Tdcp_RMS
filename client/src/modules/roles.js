@@ -24,11 +24,11 @@ export const ROLE_LABELS = {
 
 export const PAGE_ROLES = {
   "/": ["org_admin", "manager"],
-  "/pos": ["org_admin", "manager", "order_taker", "cashier"],
-  "/tables": ["org_admin", "manager", "order_taker"],
-  "/orders": ["org_admin", "manager", "order_taker", "cashier"],
-  "/menu": ["org_admin", "manager", "order_taker"],
-  "/kds": ["org_admin", "manager", "kitchen"],
+  "/pos": ["manager", "order_taker", "cashier"],
+  "/tables": ["manager", "order_taker"],
+  "/orders": ["manager", "order_taker", "cashier"],
+  "/menu": ["manager", "order_taker"],
+  "/kds": ["manager", "kitchen"],
   "/customers": ["org_admin", "manager"],
   "/reports": ["super_admin", "admin", "org_admin", "manager"],
   "/audit-logs": ["org_admin", "manager"],

@@ -9,8 +9,13 @@ import {
 } from "./offlineSync";
 import { guestLoginPath } from "./lib/platform";
 
+export function apiBase() {
+  const desktop = typeof window !== "undefined" ? window.tdcpDesktop?.apiBase : "";
+  return desktop || "/api";
+}
+
 const api = axios.create({
-  baseURL: "/api",
+  baseURL: apiBase(),
   timeout: 20000,
 });
 
@@ -55,7 +60,9 @@ api.interceptors.request.use((config) => {
     config.params = hq ? { ...params, hq: 1 } : params;
     return config;
   }
-  const explicitSite = Object.prototype.hasOwnProperty.call(config.params || {}, "restaurant_id");
+  const explicitSite =
+    Object.prototype.hasOwnProperty.call(params, "restaurant_id") ||
+    Object.prototype.hasOwnProperty.call(params, "site_id");
   if (active && !explicitSite && !skipResortScope(config.url || "")) {
     config.params = { ...params, restaurant_id: active, site_id: active };
   }

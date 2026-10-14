@@ -1,40 +1,65 @@
 import { app, BrowserWindow, Menu, dialog, ipcMain } from "electron";
 import fs from "node:fs";
+import http from "node:http";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+const APP_VERSION = "1.0.3";
+const MIME = {
+  ".html": "text/html; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".svg": "image/svg+xml",
+  ".json": "application/json",
+  ".webmanifest": "application/manifest+json",
+  ".ico": "image/x-icon",
+  ".woff2": "font/woff2",
+};
+
 let mainWindow = null;
-let closeDb = async () => {};
+let staticServer = null;
 
 function appRoot() {
-  if (app.isPackaged) {
-    return path.join(process.resourcesPath, "app");
-  }
-  return path.join(__dirname, "..");
+  return app.getAppPath();
 }
 
-function ensureEnvFile(root, userData) {
-  const userEnv = path.join(userData, ".env");
-  const bundled = path.join(root, "server", ".env");
-  const example = path.join(root, "server", ".env.example");
-  if (!fs.existsSync(userEnv)) {
-    const source = fs.existsSync(bundled) ? bundled : example;
-    if (source && fs.existsSync(source)) {
-      fs.copyFileSync(source, userEnv);
-    }
-  }
-  if (fs.existsSync(userEnv)) {
-    const text = fs.readFileSync(userEnv, "utf8");
-    if (/postgres(ql)?:\/\//i.test(text)) {
-      fs.writeFileSync(
-        userEnv,
-        text.replace(/postgres(ql)?:\/\/\S+/i, "mysql://tdcp:tdcp123@127.0.0.1:3306/tdcp_rms")
-      );
-    }
-  }
-  return fs.existsSync(userEnv) ? userEnv : bundled;
+function resolveInside(root, pathname) {
+  const base = path.resolve(root);
+  const rel = decodeURIComponent(pathname || "/").replace(/^[/\\]+/, "");
+  const file = path.resolve(base, rel);
+  if (file !== base && !file.startsWith(base + path.sep)) return null;
+  return file;
+}
+
+function startStatic(root) {
+  return new Promise((resolve, reject) => {
+    const server = http.createServer((req, res) => {
+      const url = new URL(req.url || "/", "http://127.0.0.1");
+      let file = resolveInside(root, url.pathname);
+      if (!file) {
+        res.writeHead(403);
+        res.end();
+        return;
+      }
+      if (!fs.existsSync(file) || fs.statSync(file).isDirectory() || !path.extname(file)) {
+        file = path.join(root, "index.html");
+      }
+      if (!fs.existsSync(file)) {
+        res.writeHead(404);
+        res.end();
+        return;
+      }
+      res.writeHead(200, { "Content-Type": MIME[path.extname(file)] || "application/octet-stream", "Cache-Control": "no-store" });
+      res.end(fs.readFileSync(file));
+    });
+    server.listen(17500, "127.0.0.1", () => resolve(server));
+    server.on("error", reject);
+  });
 }
 
 ipcMain.handle("print-html", async (_event, html) => {
@@ -78,18 +103,8 @@ ipcMain.handle("print-html", async (_event, html) => {
 
 async function createWindow() {
   const root = appRoot();
-  const userData = app.getPath("userData");
   const clientDist = path.join(root, "client", "dist");
-  const iconPng = path.join(root, "client", "public", "tdcp-logo.png");
-
-  process.env.TDCP_DESKTOP = "1";
-  process.env.TDCP_DATA_DIR = userData;
-  process.env.TDCP_CLIENT_DIST = clientDist;
-  process.env.TDCP_UPLOADS_DIR = path.join(userData, "uploads");
-  process.env.TDCP_ENV_PATH = ensureEnvFile(root, userData);
-  process.env.TDCP_PORT = "17500";
-  process.env.PORT = "17500";
-  process.env.TDCP_BIND ||= "0.0.0.0";
+  const iconPng = path.join(clientDist, "tdcp-logo.png");
 
   if (!fs.existsSync(path.join(clientDist, "index.html"))) {
     dialog.showErrorBox(
@@ -100,11 +115,8 @@ async function createWindow() {
     return;
   }
 
-  const serverEntry = path.join(root, "server", "src", "index.js");
-  const { startTdcpServer } = await import(pathToFileURL(serverEntry).href);
-  const started = await startTdcpServer();
-  closeDb = started.closeDb || closeDb;
-  const url = `http://127.0.0.1:${started.port}`;
+  staticServer = await startStatic(clientDist);
+  const url = "http://127.0.0.1:17500";
 
   Menu.setApplicationMenu(null);
   mainWindow = new BrowserWindow({
@@ -112,7 +124,7 @@ async function createWindow() {
     height: 920,
     minWidth: 1100,
     minHeight: 700,
-    title: "TDCP RMS",
+    title: `TDCP RMS ${APP_VERSION}`,
     icon: fs.existsSync(iconPng) ? iconPng : undefined,
     show: false,
     webPreferences: {
@@ -146,12 +158,8 @@ if (!gotLock) {
     app.quit();
   });
 
-  app.on("window-all-closed", async () => {
-    try {
-      await closeDb();
-    } catch {
-      /* ignore */
-    }
+  app.on("window-all-closed", () => {
+    if (staticServer) staticServer.close();
     app.quit();
   });
 }

@@ -2,9 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ArrowRight,
+  ExternalLink,
   Building2,
-  LayoutGrid,
-  List,
   MapPin,
   Pencil,
   Plus,
@@ -12,7 +11,7 @@ import {
   Trash2,
   ShoppingBag,
   TrendingUp,
-  Users,
+  Utensils,
   X,
 } from "lucide-react";
 import api from "../api";
@@ -33,7 +32,6 @@ export default function Restaurants() {
   const { user, organization, setActiveRestaurant, refreshRestaurants } = useAuth();
   const navigate = useNavigate();
   const [rows, setRows] = useState([]);
-  const [view, setView] = useState("grid");
   const [filter, setFilter] = useState("all");
   const [busyId, setBusyId] = useState(null);
   const [editing, setEditing] = useState(null);
@@ -54,6 +52,8 @@ export default function Restaurants() {
 
   useEffect(() => {
     load();
+    window.addEventListener("tdcp-data-synced", load);
+    return () => window.removeEventListener("tdcp-data-synced", load);
   }, []);
 
   function canDelete(r) {
@@ -189,16 +189,6 @@ export default function Restaurants() {
     return rows.filter((r) => r.location === filter);
   }, [rows, filter]);
 
-  const totals = useMemo(
-    () => ({
-      count: rows.length,
-      sales: rows.reduce((s, r) => s + Number(r.today_sales || 0), 0),
-      orders: rows.reduce((s, r) => s + Number(r.today_orders || 0), 0),
-      users: rows.reduce((s, r) => s + Number(r.user_count || 0), 0),
-    }),
-    [rows]
-  );
-
   return (
     <div className="space-y-4">
       <section
@@ -218,33 +208,6 @@ export default function Restaurants() {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <div
-              className="flex rounded-xl border p-1"
-              style={{ borderColor: "var(--surface-border)" }}
-              role="group"
-              aria-label="View mode"
-            >
-              <button
-                type="button"
-                aria-pressed={view === "grid"}
-                onClick={() => setView("grid")}
-                className={`grid h-9 w-9 place-items-center rounded-lg ${
-                  view === "grid" ? "bg-tdcp-50 text-tdcp-800" : "text-tdcp-500"
-                }`}
-              >
-                <LayoutGrid size={16} />
-              </button>
-              <button
-                type="button"
-                aria-pressed={view === "list"}
-                onClick={() => setView("list")}
-                className={`grid h-9 w-9 place-items-center rounded-lg ${
-                  view === "list" ? "bg-tdcp-50 text-tdcp-800" : "text-tdcp-500"
-                }`}
-              >
-                <List size={16} />
-              </button>
-            </div>
             <select
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
@@ -273,12 +236,11 @@ export default function Restaurants() {
           </div>
         </div>
 
-        <div className={view === "grid" ? "grid gap-4 lg:grid-cols-2" : "grid gap-4"}>
+        <div className="grid gap-4 lg:grid-cols-2">
           {visible.map((r) => (
             <RestaurantCard
               key={r.id}
               restaurant={r}
-              compact={view === "list"}
               canToggle={user?.role === "admin" || user?.role === "super_admin" || user?.role === "org_admin"}
               canDelete={canDelete(r)}
               busy={busyId === r.id}
@@ -288,16 +250,6 @@ export default function Restaurants() {
               onOpen={() => openResort(r)}
             />
           ))}
-        </div>
-
-        <div
-          className="mt-5 grid grid-cols-2 gap-3 rounded-2xl border px-3 py-4 sm:grid-cols-4"
-          style={{ borderColor: "var(--surface-border)" }}
-        >
-          <FootStat icon={Building2} value={totals.count} label="Total Restaurants" />
-          <FootStat icon={TrendingUp} value={formatPKR(totals.sales)} label="Total Sales Today" />
-          <FootStat icon={ShoppingBag} value={totals.orders} label="Total Orders Today" />
-          <FootStat icon={Users} value={totals.users} label="Active Users" />
         </div>
       </section>
 
@@ -454,123 +406,83 @@ export default function Restaurants() {
   );
 }
 
-function RestaurantCard({ restaurant: r, compact, canToggle, canDelete, busy, onToggle, onEdit, onDelete, onOpen }) {
+function RestaurantCard({ restaurant: r, canToggle, canDelete, busy, onToggle, onEdit, onDelete, onOpen }) {
   const active = isActive(r.status);
+  const outline = "inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold";
   return (
-    <article
-      className={`overflow-hidden rounded-3xl border ${compact ? "sm:flex" : "flex flex-col sm:flex-row"}`}
-      style={{ background: "var(--surface)", borderColor: "var(--surface-border)" }}
-    >
-      <div className={`relative h-44 shrink-0 overflow-hidden bg-[#d5efe3] ${compact ? "sm:w-56" : "sm:w-[46%]"}`}>
-        {r.image_url ? (
-          <img src={r.image_url} alt="" className="h-full w-full object-cover" />
-        ) : null}
+    <article className="flex flex-col gap-4 rounded-[28px] border border-[#e6eef2] bg-white p-4 shadow-sm sm:flex-row">
+      <div className="relative h-52 w-full shrink-0 overflow-hidden rounded-2xl bg-[#d5efe3] sm:h-auto sm:w-60">
+        {r.image_url ? <img src={r.image_url} alt="" className="h-full w-full object-cover" /> : null}
         <span
-          className={`absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold ${
-            active ? "bg-white/90 text-emerald-700" : "bg-white/90 text-rose-600"
+          className={`absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-full bg-white px-2.5 py-1 text-[11px] font-bold tracking-wide ${
+            active ? "text-emerald-600" : "text-rose-500"
           }`}
         >
           <span className={`h-2 w-2 rounded-full ${active ? "bg-emerald-500" : "bg-rose-500"}`} />
-          {active ? "Active" : "Closed"}
+          {active ? "ACTIVE" : "CLOSED"}
         </span>
       </div>
 
-      <div className="flex min-w-0 flex-1 flex-col p-4">
-        <div className="flex items-start gap-2.5">
-          <span className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-tdcp-50 text-tdcp-700">
-            <Building2 size={16} />
+      <div className="flex min-w-0 flex-1 flex-col">
+        <div className="flex items-start gap-3">
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#e7f6ee] text-[#16845c]">
+            <Utensils size={18} />
           </span>
-          <div>
-            <h3 className="text-base font-extrabold leading-snug">{r.name}</h3>
-            <p className="mt-1 flex items-center gap-1 text-xs" style={{ color: "var(--app-muted)" }}>
-              <MapPin size={12} className="text-tdcp-500" />
+          <div className="min-w-0">
+            <h3 className="truncate text-lg font-extrabold text-[#16324a]">{r.name}</h3>
+            <p className="mt-0.5 flex items-center gap-1 text-sm text-slate-500">
+              <MapPin size={13} className="text-[#16845c]" />
               {r.location || "—"}
             </p>
           </div>
         </div>
 
-        <div className="mt-4 grid grid-cols-2 gap-2">
-          <div className="rounded-2xl border px-3 py-2.5" style={{ borderColor: "var(--surface-border)" }}>
-            <p className="flex items-center gap-1 text-[11px]" style={{ color: "var(--app-muted)" }}>
-              <TrendingUp size={12} className="text-tdcp-500" />
+        <div className="mt-4 grid grid-cols-2 gap-3">
+          <div className="rounded-2xl bg-[#f4fbf7] px-3 py-3">
+            <p className="flex items-center gap-1 text-[11px] font-medium text-slate-400">
+              <TrendingUp size={12} className="text-[#16845c]" />
               Today&apos;s Sales
             </p>
-            <p className="mt-0.5 font-extrabold text-tdcp-800">{formatPKR(r.today_sales || 0)}</p>
+            <p className="mt-1 text-xl font-extrabold text-[#16324a]">{formatPKR(r.today_sales || 0)}</p>
           </div>
-          <div className="rounded-2xl border px-3 py-2.5" style={{ borderColor: "var(--surface-border)" }}>
-            <p className="flex items-center gap-1 text-[11px]" style={{ color: "var(--app-muted)" }}>
-              <ShoppingBag size={12} className="text-tdcp-500" />
+          <div className="rounded-2xl bg-[#f4fbf7] px-3 py-3">
+            <p className="flex items-center gap-1 text-[11px] font-medium text-slate-400">
+              <ShoppingBag size={12} className="text-[#16845c]" />
               Orders
             </p>
-            <p className="mt-0.5 font-extrabold text-tdcp-800">{r.today_orders || 0}</p>
+            <p className="mt-1 text-xl font-extrabold text-[#16324a]">{r.today_orders || 0}</p>
           </div>
         </div>
 
-        <div className="mt-auto flex flex-wrap items-center justify-between gap-2 pt-4">
-          {canToggle ? (
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={onEdit}
-                className="inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold text-tdcp-700"
-                style={{ borderColor: "var(--surface-border)" }}
-              >
-                <Pencil size={14} />
-                Edit details
+        {canToggle ? (
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button type="button" onClick={onEdit} className={`${outline} border-[#b7e7cf] text-[#16845c]`}>
+              <Pencil size={14} />
+              Edit details
+            </button>
+            <button type="button" disabled={busy} onClick={onToggle} className={`${outline} border-rose-200 text-rose-500 disabled:opacity-60`}>
+              <Power size={14} />
+              {busy ? "Saving…" : active ? "Deactivate" : "Activate"}
+            </button>
+            {canDelete ? (
+              <button type="button" disabled={busy} onClick={onDelete} className={`${outline} border-rose-200 text-rose-500 disabled:opacity-60`}>
+                <Trash2 size={14} />
+                Delete
               </button>
-              <button
-                type="button"
-                disabled={busy}
-                onClick={onToggle}
-                className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold ${
-                  active ? "border text-rose-600" : "bg-tdcp-800 text-white"
-                }`}
-                style={active ? { borderColor: "var(--surface-border)" } : undefined}
-              >
-                <Power size={14} />
-                {busy ? "Saving…" : active ? "Deactivate" : "Activate"}
-              </button>
-              {canDelete ? (
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={onDelete}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-600"
-                >
-                  <Trash2 size={14} />
-                  Delete
-                </button>
-              ) : null}
-            </div>
-          ) : (
-            <span />
-          )}
-          <button
-            type="button"
-            onClick={onOpen}
-            className="inline-flex items-center gap-1.5 text-sm font-semibold text-tdcp-700"
-          >
-            Open this resort
-            <ArrowRight size={15} />
-          </button>
-        </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        <button
+          type="button"
+          onClick={onOpen}
+          className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#0e4a34] px-4 py-3 text-sm font-semibold text-white"
+        >
+          <ExternalLink size={15} />
+          Open this resort
+          <ArrowRight size={15} className="ml-auto" />
+        </button>
       </div>
     </article>
-  );
-}
-
-function FootStat({ icon: Icon, value, label }) {
-  return (
-    <div className="flex items-center gap-3 px-2">
-      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-tdcp-50 text-tdcp-600">
-        <Icon size={18} />
-      </span>
-      <div className="min-w-0">
-        <p className="truncate text-sm font-extrabold leading-tight">{value}</p>
-        <p className="text-[11px]" style={{ color: "var(--app-muted)" }}>
-          {label}
-        </p>
-      </div>
-    </div>
   );
 }

@@ -167,9 +167,15 @@ export function AuthProvider({ children }) {
         const { data } = await api.post("/auth/login", {
           email,
           password,
-          organization_code: organizationCode || undefined,
-          portal: portal || undefined,
+          organization_code: window.tdcpDesktop?.tdcpOnly ? "tdcp" : organizationCode || undefined,
+          portal: window.tdcpDesktop?.tdcpOnly ? "org" : portal || undefined,
         });
+        const orgCode = String(data.organization?.code || "").toUpperCase();
+        if (window.tdcpDesktop?.tdcpOnly && (data.user?.role === "super_admin" || data.user?.role === "admin" || (orgCode && orgCode !== "TDCP"))) {
+          const error = new Error("This app is for TDCP accounts only.");
+          error.response = { data: { message: "This app is for TDCP accounts only." } };
+          throw error;
+        }
         persistSession(data);
         applySession(data);
         if (!canSwitchSites(data.user)) {

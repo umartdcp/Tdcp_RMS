@@ -8,10 +8,11 @@ import { canAccessPath, homePath } from "../modules/roles";
 import { consumeReturnPath } from "../lib/platform";
 
 export default function Login({ code }) {
-  const { login, user } = useAuth();
+  const { login, logout, user } = useAuth();
   const navigate = useNavigate();
   const { orgCode: paramCode } = useParams();
-  const orgCode = code || paramCode;
+  const desktopTdcp = Boolean(window.tdcpDesktop?.tdcpOnly);
+  const orgCode = desktopTdcp ? "tdcp" : code || paramCode;
   const [email, setEmail] = useState(() => localStorage.getItem("servex_email") || "");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -35,7 +36,12 @@ export default function Login({ code }) {
     setBusy(true);
     setError("");
     try {
-      const signedIn = await login(email, password, org?.code || orgCode, "org");
+      const signedIn = await login(email, password, desktopTdcp ? "tdcp" : org?.code || orgCode, "org");
+      if (desktopTdcp && (signedIn?.role === "super_admin" || signedIn?.role === "admin")) {
+        logout();
+        setError("This app is for TDCP accounts only.");
+        return;
+      }
       const back = consumeReturnPath("");
       navigate(back && canAccessPath(signedIn, back) ? back : homePath(signedIn));
     } catch (err) {

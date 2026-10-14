@@ -92,7 +92,7 @@ function initialOf(name) {
 
 export default function UsersPage({ organizationId, sites: sitesProp, organization }) {
   const { user: me, restaurants, activeRestaurant, activeRestaurantId } = useAuth();
-  const lockedSite = !isMainAdmin(me);
+  const lockedSite = !isMainAdmin(me) && !isOrgAdmin(me);
   const siteChoices = (sitesProp && sitesProp.length ? sitesProp : restaurants).filter(
     (s) => !organizationId || Number(s.organization_id) === Number(organizationId) || !s.organization_id
   );
@@ -105,8 +105,8 @@ export default function UsersPage({ organizationId, sites: sitesProp, organizati
     restaurant_id: String(activeRestaurantId || me?.site_id || me?.restaurant_id || siteChoices[0]?.id || ""),
   });
   const [users, setUsers] = useState([]);
-  const [draft, setDraft] = useState({ q: "", role: "all" });
-  const [applied, setApplied] = useState({ q: "", role: "all" });
+  const [draft, setDraft] = useState({ q: "", role: "all", site: "all" });
+  const [applied, setApplied] = useState({ q: "", role: "all", site: "all" });
   const [sort, setSort] = useState({ key: "name", dir: "asc" });
   const [page, setPage] = useState(1);
   const [modal, setModal] = useState(null);
@@ -117,13 +117,21 @@ export default function UsersPage({ organizationId, sites: sitesProp, organizati
 
   async function load() {
     const params = {};
+    const ownSite = String(me?.site_id || me?.restaurant_id || "");
     if (organizationId) params.organization_id = organizationId;
-    const siteId = activeRestaurantId || me?.site_id || me?.restaurant_id;
-    if (!organizationId && siteId) params.site_id = siteId;
+    if (isOrgAdmin(me) && !organizationId) {
+      params.hq = 1;
+    } else if (!isMainAdmin(me)) {
+      const siteId = ownSite || activeRestaurantId;
+      if (siteId) {
+        params.site_id = siteId;
+        params.restaurant_id = siteId;
+      }
+    }
     const rows = (await api.get("/users", { params })).data || [];
     setUsers(
-      siteId && !organizationId
-        ? rows.filter((u) => String(u.site_id || u.restaurant_id) === String(siteId))
+      !isOrgAdmin(me) && !isMainAdmin(me) && ownSite
+        ? rows.filter((u) => String(u.site_id || u.restaurant_id) === ownSite)
         : rows
     );
   }
@@ -149,6 +157,7 @@ export default function UsersPage({ organizationId, sites: sitesProp, organizati
     const q = applied.q.trim().toLowerCase();
     return users.filter((u) => {
       if (applied.role !== "all" && u.role !== applied.role) return false;
+      if (applied.site !== "all" && String(u.site_id || u.restaurant_id) !== String(applied.site)) return false;
       if (q && !`${u.name} ${u.email}`.toLowerCase().includes(q)) return false;
       return true;
     });
@@ -222,8 +231,10 @@ export default function UsersPage({ organizationId, sites: sitesProp, organizati
     }
     const needsSite = form.role !== "org_admin" && form.role !== "super_admin";
     const lockedId = Number(activeRestaurantId || me?.site_id || me?.restaurant_id || 0);
-    if (needsSite && !(lockedSite ? lockedId : form.restaurant_id)) {
-      next.restaurant_id = "Open this site before adding staff.";
+    const adminPicksSite = isOrgAdmin(me) && form.role === "manager";
+    const usesLockedSite = (lockedSite || isOrgAdmin(me)) && !adminPicksSite;
+    if (needsSite && !(usesLockedSite ? lockedId : form.restaurant_id)) {
+      next.restaurant_id = adminPicksSite ? "Select a site." : "Open this site before adding staff.";
     }
     setFieldErrors(next);
     if (Object.keys(next).length || busy) return;
@@ -237,7 +248,9 @@ export default function UsersPage({ organizationId, sites: sitesProp, organizati
       };
       if (form.password) payload.password = form.password;
       if (organizationId) payload.organization_id = Number(organizationId);
-      const chosenSite = lockedSite ? lockedId : Number(form.restaurant_id || 0);
+      const adminPicksSite = isOrgAdmin(me) && form.role === "manager";
+      const usesLockedSite = (lockedSite || isOrgAdmin(me)) && !adminPicksSite;
+      const chosenSite = usesLockedSite ? lockedId : Number(form.restaurant_id || 0);
       if (form.role !== "org_admin" && form.role !== "super_admin" && chosenSite) {
         payload.restaurant_id = chosenSite;
         payload.site_id = chosenSite;
@@ -299,12 +312,19 @@ export default function UsersPage({ organizationId, sites: sitesProp, organizati
         </div>
 
         <div className="mb-5 grid grid-cols-2 gap-3 xl:grid-cols-5">
-          <Kpi icon={Users} label="Total Users" value={stats.total} hint={isMainAdmin(me) ? "All accounts" : "Staff at this resort"} />
+          <Kpi icon={Users} label="Total Users" value={stats.total} hint={isMainAdmin(me) || isOrgAdmin(me) ? "All accounts" : "Staff at this resort"} />
           {isMainAdmin(me) ? (
             <>
               <Kpi icon={Shield} label="Main Admins" value={stats.admin} hint="HQ access" />
               <Kpi icon={Briefcase} label="Resort Admins" value={stats.manager} hint="Full resort access" />
               <Kpi icon={Store} label="Resort Staff" value={stats.staff} hint="Order taker, cashier, chef" />
+              <Kpi icon={ChefHat} label="Chefs" value={stats.kitchen} hint="Kitchen only" />
+            </>
+          ) : isOrgAdmin(me) ? (
+            <>
+              <Kpi icon={Briefcase} label="Site Managers" value={stats.manager} hint="Every resort" />
+              <Kpi icon={ClipboardList} label="Order Takers" value={stats.order_taker} hint="POS, tables, orders, menu" />
+              <Kpi icon={Store} label="Cashiers" value={stats.cashier} hint="POS and payments" />
               <Kpi icon={ChefHat} label="Chefs" value={stats.kitchen} hint="Kitchen only" />
             </>
           ) : (
@@ -340,6 +360,26 @@ export default function UsersPage({ organizationId, sites: sitesProp, organizati
               </option>
             ))}
           </select>
+          {isOrgAdmin(me) || isMainAdmin(me) ? (
+            <select
+              value={draft.site}
+              onChange={(e) => {
+                const site = e.target.value;
+                setDraft((prev) => ({ ...prev, site }));
+                setApplied((prev) => ({ ...prev, site }));
+                setPage(1);
+              }}
+              className="rounded-xl border px-3 py-2.5 text-sm"
+              style={inputStyle}
+            >
+              <option value="all">All sites</option>
+              {siteChoices.map((site) => (
+                <option key={site.id} value={site.id}>
+                  {site.name}
+                </option>
+              ))}
+            </select>
+          ) : null}
           <button
             type="button"
             onClick={() => {
@@ -561,13 +601,34 @@ export default function UsersPage({ organizationId, sites: sitesProp, organizati
                 </select>
               </label>
               {form.role !== "org_admin" && form.role !== "super_admin" ? (
-                lockedSite ? (
+                isOrgAdmin(me) && form.role === "manager" ? (
+                  <label className="text-xs font-semibold" style={{ color: "var(--app-muted)" }}>
+                    Site
+                    <select
+                      required
+                      className={`${fieldClass} mt-1`}
+                      style={inputStyle}
+                      value={form.restaurant_id}
+                      onChange={(e) => setForm({ ...form, restaurant_id: e.target.value })}
+                    >
+                      <option value="">Select site</option>
+                      {siteChoices.map((r) => (
+                        <option key={r.id} value={r.id}>
+                          {r.name}
+                        </option>
+                      ))}
+                    </select>
+                    <FieldError message={fieldErrors.restaurant_id} />
+                  </label>
+                ) : lockedSite ? (
                   <div>
                     <p className="rounded-xl bg-tdcp-50 px-3 py-2 text-sm font-semibold text-tdcp-800">
                       Site: {activeRestaurant?.name || me?.restaurant_name || "this site"}
                     </p>
                     <FieldError message={fieldErrors.restaurant_id} />
                   </div>
+                ) : isOrgAdmin(me) ? (
+                  <FieldError message={fieldErrors.restaurant_id} />
                 ) : (
                   <label className="text-xs font-semibold" style={{ color: "var(--app-muted)" }}>
                     Site

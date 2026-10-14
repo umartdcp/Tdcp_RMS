@@ -114,9 +114,11 @@ export default function TdcpHqDashboard({ hq = true }) {
     }
     load();
     const timer = setInterval(load, 15000);
+    window.addEventListener("tdcp-data-synced", load);
     return () => {
       alive = false;
       clearInterval(timer);
+      window.removeEventListener("tdcp-data-synced", load);
     };
   }, [hq]);
 

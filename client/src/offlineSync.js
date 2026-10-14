@@ -266,7 +266,8 @@ async function probe() {
     return false;
   }
   try {
-    const res = await fetch("/api/health", { cache: "no-store", signal: AbortSignal.timeout(4000) });
+    const base = (typeof window !== "undefined" && window.tdcpDesktop?.apiBase) || "/api";
+    const res = await fetch(`${String(base).replace(/\/$/, "")}/health`, { cache: "no-store", signal: AbortSignal.timeout(4000) });
     const body = await res.json();
     const up = res.ok && body.db === "up";
     publish({ online: up });

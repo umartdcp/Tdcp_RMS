@@ -2,6 +2,7 @@ const APEX = new Set(["kitcheniq.cloud", "www.kitcheniq.cloud", "kitchiq.cloud",
 
 export function hostPortal() {
   if (typeof window === "undefined") return null;
+  if (window.tdcpDesktop?.tdcpOnly) return "tdcp";
   const host = window.location.hostname.toLowerCase();
   if (host === "tdcp.kitcheniq.cloud" || host === "tdcp.kitchiq.cloud") return "tdcp";
   if (APEX.has(host)) return "servex";

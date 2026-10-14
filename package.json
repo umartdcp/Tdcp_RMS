@@ -1,7 +1,7 @@
 {
   "name": "tdcp-rms",
   "private": true,
-  "version": "1.0.1",
+  "version": "1.0.3",
   "main": "desktop/main.mjs",
   "author": "Tourism Development Corporation of Punjab",
   "description": "TDCP Restaurant Management System",
@@ -19,5 +19,22 @@
     "concurrently": "^9.2.1",
     "electron": "^37.2.6",
     "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "pk.gov.tdcp.rms",
+    "productName": "TDCP RMS",
+    "directories": { "output": "release" },
+    "files": ["desktop/**/*", "client/dist/**/*", "package.json"],
+    "asar": true,
+    "win": {
+      "icon": "client/public/tdcp-logo.png",
+      "target": [{ "target": "nsis", "arch": ["x64"] }]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "shortcutName": "TDCP RMS"
+    }
   }
 }

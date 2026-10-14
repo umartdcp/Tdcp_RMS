@@ -83,7 +83,7 @@ export default function App() {
       <AuthProvider>
         <BrowserRouter>
           <Routes>
-          <Route path="/login/servex" element={<SuperAdminLogin />} />
+          <Route path="/login/servex" element={typeof window !== "undefined" && window.tdcpDesktop?.tdcpOnly ? <Navigate to="/login" replace /> : <SuperAdminLogin />} />
           <Route path="/login" element={<HostLogin />} />
           <Route path="/login/:orgCode" element={<Login />} />
           <Route path="/:orgCode/login" element={<Login />} />

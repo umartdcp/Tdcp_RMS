@@ -10,7 +10,7 @@ export const SERVEX = {
   background_color: "#f4f7fb",
   text_color: "#1b2a4a",
   logo_url: "/kitcheniq-mark.svg",
-  version: "v1.0.0",
+  version: "v1.0.3",
 };
 
 export function isServexUser(user) {
