@@ -78,13 +78,18 @@ function request(req) {
 }
 
 export function cacheKey(config) {
-  const url = String(config.url || "");
+  const url = String(config.url || "").split("?")[0];
   const params = config.params || {};
   const query = Object.keys(params)
+    .filter((key) => params[key] != null && params[key] !== "")
     .sort()
     .map((key) => `${key}=${params[key]}`)
     .join("&");
   return `GET ${url}${query ? `?${query}` : ""}`;
+}
+
+function pathOfKey(key) {
+  return String(key).replace(/^GET\s+/, "").split("?")[0];
 }
 
 export async function rememberGet(config, data) {
@@ -97,7 +102,26 @@ export async function rememberGet(config, data) {
 
 export async function readCache(config) {
   try {
-    return await withStore("cache", "readonly", (store) => request(store.get(cacheKey(config))));
+    return await withStore("cache", "readonly", async (store) => {
+      const exact = await request(store.get(cacheKey(config)));
+      if (exact !== undefined) return exact;
+      const path = String(config.url || "").split("?")[0];
+      const keys = (await request(store.getAllKeys())).map(String);
+      const same = keys.filter((key) => pathOfKey(key) === path);
+      if (!same.length) return undefined;
+      const wanted = config.params || {};
+      const ranked = same
+        .map((key) => {
+          const query = key.split("?")[1] || "";
+          let score = 0;
+          Object.entries(wanted).forEach(([name, value]) => {
+            if (value != null && value !== "" && query.includes(`${name}=${value}`)) score += 2;
+          });
+          return { key, score };
+        })
+        .sort((a, b) => b.score - a.score);
+      return request(store.get(ranked[0].key));
+    });
   } catch {
     return undefined;
   }
@@ -111,18 +135,41 @@ function collectionPath(url) {
   return `/${parts[0]}`;
 }
 
-function applyToCached(data, method, url, preview) {
-  const id = String(preview?.id || String(url).split("/").filter(Boolean).pop() || "");
-  if (Array.isArray(data)) {
-    if (method === "delete") return data.filter((row) => String(row?.id) !== id);
-    if (method === "post") return [preview, ...data];
-    return data.map((row) => (row && String(row.id) === id ? { ...row, ...preview } : row));
+function entityId(url, preview) {
+  if (preview?.id != null && preview.id !== "") return String(preview.id);
+  const parts = String(url || "").split("?")[0].split("/").filter(Boolean);
+  return String(parts[parts.length - 1] || "");
+}
+
+function listOp(list, method, id, preview) {
+  const rows = Array.isArray(list) ? list : [];
+  if (method === "delete") return rows.filter((row) => String(row?.id) !== id);
+  if (method === "post") {
+    const next = { ...preview, id };
+    return [next, ...rows.filter((row) => String(row?.id) !== id)];
   }
-  if (data && Array.isArray(data.items)) {
-    return { ...data, items: applyToCached(data.items, method, url, preview) };
+  return rows.map((row) => (row && String(row.id) === id ? { ...row, ...preview, id: row.id } : row));
+}
+
+function applyToCached(data, method, url, preview) {
+  const path = String(url || "").split("?")[0];
+  const id = entityId(url, preview);
+  if (data && Array.isArray(data.categories) && Array.isArray(data.items)) {
+    if (path.includes("/categories")) {
+      return { ...data, categories: listOp(data.categories, method, id, preview) };
+    }
+    if (/\/menu\/[^/]+\/image/.test(path)) return data;
+    if (path === "/menu" || /^\/menu\/[^/]+$/.test(path)) {
+      return { ...data, items: listOp(data.items, method, id, preview) };
+    }
+    return data;
+  }
+  if (Array.isArray(data)) return listOp(data, method, id, preview);
+  if (data && Array.isArray(data.items) && !Array.isArray(data.categories)) {
+    return { ...data, items: listOp(data.items, method, id, preview) };
   }
   if (data && Array.isArray(data.rows)) {
-    return { ...data, rows: applyToCached(data.rows, method, url, preview) };
+    return { ...data, rows: listOp(data.rows, method, id, preview) };
   }
   return data;
 }
@@ -266,7 +313,9 @@ async function probe() {
     return false;
   }
   try {
-    const base = (typeof window !== "undefined" && window.tdcpDesktop?.apiBase) || "/api";
+    const base =
+      (typeof window !== "undefined" && window.tdcpDesktop?.apiBase) ||
+      (typeof navigator !== "undefined" && /Electron/i.test(navigator.userAgent || "") ? "https://kitcheniq.cloud/api" : "/api");
     const res = await fetch(`${String(base).replace(/\/$/, "")}/health`, { cache: "no-store", signal: AbortSignal.timeout(4000) });
     const body = await res.json();
     const up = res.ok && body.db === "up";
@@ -316,7 +365,7 @@ export async function flushOutbox() {
       online: true,
       lastSync: pending === 0 ? Date.now() : state.lastSync,
     });
-    if (pending === 0) window.dispatchEvent(new Event("tdcp-data-synced"));
+    window.dispatchEvent(new Event("tdcp-data-synced"));
     window.dispatchEvent(new Event("tdcp-notify-refresh"));
   } finally {
     flushing = false;

@@ -95,11 +95,18 @@ export default function MenuPage() {
   const [toast, setToast] = useState("");
 
   async function load() {
-    setData((await api.get("/menu")).data || { categories: [], items: [] });
+    try {
+      const res = await api.get("/menu");
+      if (res?.data?.items) setData(res.data);
+    } catch {
+      /* keep the menu already saved on this device */
+    }
   }
 
   useEffect(() => {
     load();
+    window.addEventListener("tdcp-data-synced", load);
+    return () => window.removeEventListener("tdcp-data-synced", load);
   }, []);
 
   useEffect(() => {

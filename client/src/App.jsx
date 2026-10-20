@@ -23,7 +23,7 @@ import AuditLogs from "./modules/hq/AuditLogs";
 import PayInvoice from "./pages/PayInvoice";
 import { canAccessPath, homePath, isMainAdmin, isOrgAdmin } from "./modules/roles";
 import { guestLoginPath } from "./lib/platform";
-import { hostPortal } from "./lib/hostPortal";
+import { hostPortal, isTdcpDesktop } from "./lib/hostPortal";
 import Organizations from "./pages/Organizations";
 import OrganizationHub from "./pages/OrganizationHub";
 
@@ -83,7 +83,7 @@ export default function App() {
       <AuthProvider>
         <BrowserRouter>
           <Routes>
-          <Route path="/login/servex" element={typeof window !== "undefined" && window.tdcpDesktop?.tdcpOnly ? <Navigate to="/login" replace /> : <SuperAdminLogin />} />
+          <Route path="/login/servex" element={isTdcpDesktop() ? <Navigate to="/login/tdcp" replace /> : <SuperAdminLogin />} />
           <Route path="/login" element={<HostLogin />} />
           <Route path="/login/:orgCode" element={<Login />} />
           <Route path="/:orgCode/login" element={<Login />} />

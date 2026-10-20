@@ -19,19 +19,27 @@ export default function KDS() {
 
   async function load() {
     if (saving.current) return;
-    const { data } = await api.get("/orders");
-    setOrders(
-      (data || []).filter((o) => {
-        const status = String(o.status || "").toLowerCase();
-        return ["new", "preparing", "ready"].includes(status) && o.payment_status !== "paid";
-      })
-    );
+    try {
+      const { data } = await api.get("/orders");
+      setOrders(
+        (data || []).filter((o) => {
+          const status = String(o.status || "").toLowerCase();
+          return ["new", "preparing", "ready"].includes(status) && o.payment_status !== "paid";
+        })
+      );
+    } catch {
+      /* keep the kitchen tickets already saved on this device */
+    }
   }
 
   useEffect(() => {
     load();
     const t = setInterval(load, 4000);
-    return () => clearInterval(t);
+    window.addEventListener("tdcp-data-synced", load);
+    return () => {
+      clearInterval(t);
+      window.removeEventListener("tdcp-data-synced", load);
+    };
   }, [activeRestaurantId]);
 
   const grouped = useMemo(() => {

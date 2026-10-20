@@ -216,11 +216,16 @@ export default function Tables() {
   const [error, setError] = useState("");
 
   async function load() {
-    const { data } = await api.get("/tables");
+    let data = [];
+    try {
+      data = (await api.get("/tables")).data;
+    } catch {
+      return;
+    }
     const siteId = Number(activeRestaurant?.id || user?.site_id || user?.restaurant_id || 0);
     setTables(
       (Array.isArray(data) ? data : []).filter((row) => {
-        if (!Number(row?.id)) return false;
+        if (row?.id == null || row?.id === "") return false;
         if (!siteId) return true;
         const restaurantId = Number(row.restaurant_id || 0);
         const rowSite = Number(row.site_id || 0);
@@ -231,6 +236,8 @@ export default function Tables() {
 
   useEffect(() => {
     load();
+    window.addEventListener("tdcp-data-synced", load);
+    return () => window.removeEventListener("tdcp-data-synced", load);
   }, [activeRestaurant?.id, user?.restaurant_id]);
 
   const sections = useMemo(() => {

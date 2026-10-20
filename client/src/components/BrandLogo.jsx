@@ -18,7 +18,9 @@ export default function OrganizationLogo({ size = 44, className = "", organizati
         height={size}
         className={`rounded-full bg-white object-contain ${className}`}
         onError={(e) => {
-          e.currentTarget.replaceWith(Object.assign(document.createElement("div"), { className: e.currentTarget.className }));
+          if (e.currentTarget.dataset.fallback) return;
+          e.currentTarget.dataset.fallback = "1";
+          e.currentTarget.src = "/tdcp-logo.png?v=4";
         }}
       />
     );

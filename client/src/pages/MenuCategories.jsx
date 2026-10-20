@@ -69,12 +69,18 @@ export default function MenuCategories() {
   const [busy, setBusy] = useState(false);
 
   async function load() {
-    const { data } = await api.get("/menu");
-    setCategories((data.categories || []).filter((c) => c.name && c.name !== "All"));
+    try {
+      const { data } = await api.get("/menu");
+      setCategories((data?.categories || []).filter((c) => c.name && c.name !== "All"));
+    } catch {
+      /* keep the categories already saved on this device */
+    }
   }
 
   useEffect(() => {
     load();
+    window.addEventListener("tdcp-data-synced", load);
+    return () => window.removeEventListener("tdcp-data-synced", load);
   }, [activeRestaurant?.id, user?.restaurant_id]);
 
   function resetForm() {

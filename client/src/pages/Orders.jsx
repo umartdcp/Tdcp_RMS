@@ -138,14 +138,22 @@ export default function Orders() {
   }
 
   async function load() {
-    const { data } = await api.get("/orders");
-    setOrders(data);
+    try {
+      const { data } = await api.get("/orders");
+      if (Array.isArray(data)) setOrders(data);
+    } catch {
+      /* keep the orders already saved on this device */
+    }
   }
 
   useEffect(() => {
     load();
     const t = setInterval(load, 5000);
-    return () => clearInterval(t);
+    window.addEventListener("tdcp-data-synced", load);
+    return () => {
+      clearInterval(t);
+      window.removeEventListener("tdcp-data-synced", load);
+    };
   }, []);
 
   useEffect(() => {

@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
-import api from "../api";
+import api, { warmWorkingSet } from "../api";
 import { applyBrandTheme, clearBrandTheme } from "../lib/brandTheme";
 import { SERVEX } from "../lib/platform";
 import { canSwitchSites } from "../modules/roles";
@@ -76,6 +76,7 @@ export function AuthProvider({ children }) {
       .then((res) => {
         persistSession(res.data);
         applySession(res.data);
+        warmWorkingSet();
       })
       .catch((err) => {
         if (err?.response?.status !== 401) return;
@@ -106,6 +107,11 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     loadRestaurants();
   }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    warmWorkingSet();
+  }, [user, activeRestaurantId]);
 
   useEffect(() => {
     if (!user) return;
@@ -167,11 +173,12 @@ export function AuthProvider({ children }) {
         const { data } = await api.post("/auth/login", {
           email,
           password,
-          organization_code: window.tdcpDesktop?.tdcpOnly ? "tdcp" : organizationCode || undefined,
-          portal: window.tdcpDesktop?.tdcpOnly ? "org" : portal || undefined,
+          organization_code: window.tdcpDesktop?.tdcpOnly || /Electron/i.test(navigator.userAgent || "") ? "tdcp" : organizationCode || undefined,
+          portal: window.tdcpDesktop?.tdcpOnly || /Electron/i.test(navigator.userAgent || "") ? "org" : portal || undefined,
         });
         const orgCode = String(data.organization?.code || "").toUpperCase();
-        if (window.tdcpDesktop?.tdcpOnly && (data.user?.role === "super_admin" || data.user?.role === "admin" || (orgCode && orgCode !== "TDCP"))) {
+        const desktopTdcp = Boolean(window.tdcpDesktop?.tdcpOnly) || /Electron/i.test(navigator.userAgent || "");
+        if (desktopTdcp && (data.user?.role === "super_admin" || data.user?.role === "admin" || (orgCode && orgCode !== "TDCP"))) {
           const error = new Error("This app is for TDCP accounts only.");
           error.response = { data: { message: "This app is for TDCP accounts only." } };
           throw error;
@@ -184,6 +191,7 @@ export function AuthProvider({ children }) {
           localStorage.setItem("tdcp_site_pinned", "1");
           setActiveRestaurantId(id);
         }
+        warmWorkingSet();
         return data.user;
       },
       logout: () => {

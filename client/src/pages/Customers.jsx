@@ -102,11 +102,18 @@ export default function Customers() {
   const [error, setError] = useState("");
 
   async function load() {
-    setRows((await api.get("/customers")).data || []);
+    try {
+      const res = await api.get("/customers");
+      if (Array.isArray(res?.data)) setRows(res.data);
+    } catch {
+      /* keep the customers already saved on this device */
+    }
   }
 
   useEffect(() => {
     load();
+    window.addEventListener("tdcp-data-synced", load);
+    return () => window.removeEventListener("tdcp-data-synced", load);
   }, []);
 
   const stats = useMemo(() => {

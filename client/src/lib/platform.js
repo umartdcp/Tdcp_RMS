@@ -20,6 +20,9 @@ export function isServexUser(user) {
 const RETURN_KEY = "tdcp_return_path";
 
 export function guestLoginPath() {
+  if (typeof window !== "undefined" && (window.tdcpDesktop?.tdcpOnly || /Electron/i.test(navigator.userAgent || ""))) {
+    return "/login/tdcp";
+  }
   return "/login";
 }
 

@@ -33,6 +33,7 @@ import ThemeToggle from "./ThemeToggle";
 import NotificationBell, { NotificationToasts } from "./NotificationBell";
 import { loginPathForSession, rememberPath } from "../lib/platform";
 import { isTdcpOrg } from "../lib/orgBranding";
+import { subscribeSync } from "../offlineSync";
 
 const superLinks = [
   { to: "/", label: "Dashboard", icon: Home, end: true },
@@ -79,6 +80,25 @@ function crumbsFor(pathname) {
   ];
   const hit = map.find(([path]) => (path === "/" ? pathname === "/" : pathname.startsWith(path)));
   return hit ? hit[1] : ["Kitchen", "Dashboard"];
+}
+
+function SyncStatus() {
+  const [sync, setSync] = useState({ online: true, pending: 0, syncing: false });
+  useEffect(() => subscribeSync(setSync), []);
+  if (sync.syncing) {
+    return <span className="hidden text-xs font-semibold text-[#0e4a34] sm:inline">Syncing to admin dashboard…</span>;
+  }
+  if (!sync.online) {
+    return (
+      <span className="hidden text-xs font-semibold text-amber-700 sm:inline">
+        Offline{sync.pending ? ` · ${sync.pending} saved, will sync` : " · will sync when online"}
+      </span>
+    );
+  }
+  if (sync.pending) {
+    return <span className="hidden text-xs font-semibold text-amber-700 sm:inline">{sync.pending} waiting to sync</span>;
+  }
+  return null;
 }
 
 function Logo() {
@@ -324,6 +344,7 @@ export default function AppLayout() {
                 {clockLabel}
               </p>
             ) : null}
+            <SyncStatus />
             {!isPos && !tdcp ? <ThemeToggle /> : null}
             <NotificationBell />
             <div className="relative">

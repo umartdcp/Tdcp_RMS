@@ -3,7 +3,7 @@ import { Navigate, useNavigate, useParams } from "react-router-dom";
 import api from "../api";
 import { useAuth } from "../context/AuthContext";
 import ScenicLogin from "../components/ScenicLogin";
-import { applyBrandTheme } from "../lib/brandTheme";
+import { applyBrandTheme, TDCP_BRAND } from "../lib/brandTheme";
 import { canAccessPath, homePath } from "../modules/roles";
 import { consumeReturnPath } from "../lib/platform";
 
@@ -11,8 +11,9 @@ export default function Login({ code }) {
   const { login, logout, user } = useAuth();
   const navigate = useNavigate();
   const { orgCode: paramCode } = useParams();
-  const desktopTdcp = Boolean(window.tdcpDesktop?.tdcpOnly);
+  const desktopTdcp = Boolean(window.tdcpDesktop?.tdcpOnly) || /Electron/i.test(navigator.userAgent || "");
   const orgCode = desktopTdcp ? "tdcp" : code || paramCode;
+  const tdcpLogin = desktopTdcp || String(orgCode || "").toLowerCase() === "tdcp";
   const [email, setEmail] = useState(() => localStorage.getItem("servex_email") || "");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -21,15 +22,22 @@ export default function Login({ code }) {
 
   useEffect(() => {
     const code = (orgCode || "").toLowerCase();
+    if (tdcpLogin) {
+      setOrg(TDCP_BRAND);
+      applyBrandTheme(TDCP_BRAND);
+    }
     if (!code || code === "servex") return;
     api
       .get(`/auth/branding/${code}`)
       .then((res) => {
-        setOrg(res.data.organization);
-        applyBrandTheme(res.data.organization);
+        const next = tdcpLogin ? { ...TDCP_BRAND, ...res.data.organization, ...TDCP_BRAND } : res.data.organization;
+        setOrg(next);
+        applyBrandTheme(next);
       })
-      .catch(() => setOrg(null));
-  }, [orgCode]);
+      .catch(() => {
+        if (!tdcpLogin) setOrg(null);
+      });
+  }, [orgCode, tdcpLogin]);
 
   async function onSubmit(e) {
     e.preventDefault();
@@ -48,7 +56,9 @@ export default function Login({ code }) {
       setError(
         err.response?.data?.message ||
           (err.request && !err.response
-            ? "Cannot reach the API. Start the server with npm run dev from the project root."
+            ? desktopTdcp
+              ? "You are offline. Sign in when the connection is back. Orders already saved on this device will sync to the admin dashboard."
+              : "Cannot reach the API. Start the server with npm run dev from the project root."
             : "Unable to sign in")
       );
     } finally {
@@ -62,14 +72,13 @@ export default function Login({ code }) {
   }
   if (String(orgCode || "").toLowerCase() === "servex") return <Navigate to="/login/servex" replace />;
 
-  const name = org?.app_name || org?.name || "your restaurant";
+  const name = tdcpLogin ? "TDCP Restaurant Management System" : org?.app_name || org?.name || "your restaurant";
 
   return (
     <ScenicLogin
+      variant={tdcpLogin ? "tdcp" : "kitchen"}
       title="Welcome Back"
-      subtitle={`Sign in to ${name}`}
-      brandHeading={name}
-      brandLine={org?.name || "Restaurant login"}
+      subtitle={tdcpLogin ? "Sign in to your TDCP resort account" : `Sign in to ${name}`}
       email={email}
       password={password}
       onEmail={setEmail}

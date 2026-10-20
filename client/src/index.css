@@ -246,7 +246,7 @@ html[data-theme="dark"] .receipt-slip .text-slate-400 {
   background: #d4d4d8;
 }
 
-/* Login stays on the light KitchenIQ.cloud design even when the app theme is dark. */
+/* Login stays on its own light design even when the app theme is dark. */
 html[data-theme="dark"] .login-canvas {
   color: #1b2a4a;
 }
@@ -264,6 +264,12 @@ html[data-theme="dark"] .login-canvas .login-on-navy {
 }
 html[data-theme="dark"] .login-canvas .login-orange {
   color: #ff7a1a !important;
+}
+html[data-theme="dark"] .login-canvas.login-tdcp .login-accent {
+  color: #16845c !important;
+}
+html[data-theme="dark"] .login-canvas.login-tdcp {
+  color: #16324a;
 }
 html[data-theme="dark"] .login-canvas .login-navy {
   color: #1b2a4a !important;

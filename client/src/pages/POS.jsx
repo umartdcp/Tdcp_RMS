@@ -274,11 +274,20 @@ export default function POS() {
   const [brokenPhotos, setBrokenPhotos] = useState([]);
 
   useEffect(() => {
-    Promise.all([api.get("/menu"), api.get("/tables")])
-      .then(([m, t]) => {
-        setMenu(m.data);
-        setTables(t.data);
-        if (t.data[0]) setTableId(String(t.data[0].id));
+    let alive = true;
+    function pull() {
+      return Promise.all([api.get("/menu"), api.get("/tables")]).then(([m, t]) => {
+        if (!alive) return;
+        if (m.data?.items) setMenu(m.data);
+        if (Array.isArray(t.data)) {
+          setTables(t.data);
+          if (t.data[0]) setTableId((current) => current || String(t.data[0].id));
+        }
+      });
+    }
+    pull()
+      .then(() => {
+        if (!alive) return;
         try {
           const pending = JSON.parse(sessionStorage.getItem("tdcp_pending_cart") || "[]");
           if (Array.isArray(pending) && pending.length) {
@@ -298,8 +307,20 @@ export default function POS() {
           /* ignore */
         }
       })
-      .catch(() => setMessage({ tone: "error", text: "Could not load the menu. Please refresh." }))
-      .finally(() => setLoaded(true));
+      .catch(() => {
+        if (alive) setMessage({ tone: "error", text: "Could not load the menu. Open it once while online so this device can keep a copy." });
+      })
+      .finally(() => {
+        if (alive) setLoaded(true);
+      });
+    function onSync() {
+      pull().catch(() => {});
+    }
+    window.addEventListener("tdcp-data-synced", onSync);
+    return () => {
+      alive = false;
+      window.removeEventListener("tdcp-data-synced", onSync);
+    };
   }, []);
 
   const items = useMemo(() => {

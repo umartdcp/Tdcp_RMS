@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, dialog, ipcMain } from "electron";
+import { app, BrowserWindow, Menu, dialog, ipcMain, session } from "electron";
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
@@ -116,7 +116,10 @@ async function createWindow() {
   }
 
   staticServer = await startStatic(clientDist);
-  const url = "http://127.0.0.1:17500";
+  const url = "http://127.0.0.1:17500/login/tdcp";
+
+  await session.defaultSession.clearStorageData({ storages: ["serviceworkers", "cachestorage"] });
+  await session.defaultSession.clearCache();
 
   Menu.setApplicationMenu(null);
   mainWindow = new BrowserWindow({
@@ -127,14 +130,19 @@ async function createWindow() {
     title: `TDCP RMS ${APP_VERSION}`,
     icon: fs.existsSync(iconPng) ? iconPng : undefined,
     show: false,
+    autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       nodeIntegration: false,
       contextIsolation: true,
-      sandbox: true,
+      sandbox: false,
     },
   });
 
+  mainWindow.on("page-title-updated", (event) => {
+    event.preventDefault();
+    mainWindow.setTitle(`TDCP RMS ${APP_VERSION}`);
+  });
   mainWindow.once("ready-to-show", () => mainWindow.show());
   await mainWindow.loadURL(url);
   mainWindow.on("closed", () => {

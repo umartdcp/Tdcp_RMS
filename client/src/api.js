@@ -1,6 +1,7 @@
 import axios from "axios";
 import {
   canQueue,
+  getSyncStatus,
   isOfflineFailure,
   queueRequest,
   readCache,
@@ -11,13 +12,33 @@ import { guestLoginPath } from "./lib/platform";
 
 export function apiBase() {
   const desktop = typeof window !== "undefined" ? window.tdcpDesktop?.apiBase : "";
-  return desktop || "/api";
+  if (desktop) return desktop;
+  if (typeof navigator !== "undefined" && /Electron/i.test(navigator.userAgent || "")) {
+    return "https://kitcheniq.cloud/api";
+  }
+  return "/api";
 }
 
 const api = axios.create({
   baseURL: apiBase(),
-  timeout: 20000,
+  timeout: 12000,
 });
+
+const WARM_PATHS = ["/menu", "/orders", "/tables", "/customers", "/restaurants", "/notifications", "/dashboard"];
+let warming = false;
+
+export async function warmWorkingSet() {
+  if (warming || typeof window === "undefined") return;
+  if (!localStorage.getItem("tdcp_token")) return;
+  if (navigator.onLine === false || getSyncStatus().online === false) return;
+  warming = true;
+  try {
+    await Promise.all(WARM_PATHS.map((url) => api.get(url, { __warm: true }).catch(() => null)));
+    await api.get("/dashboard", { params: { hq: 1 }, __warm: true }).catch(() => null);
+  } finally {
+    warming = false;
+  }
+}
 
 setReplaySender((item) =>
   api.request({
@@ -36,7 +57,7 @@ function skipResortScope(url = "") {
   return SKIP_RESORT_SCOPE.some((p) => path.includes(p));
 }
 
-api.interceptors.request.use((config) => {
+api.interceptors.request.use(async (config) => {
   const token = localStorage.getItem("tdcp_token");
   if (token) config.headers.Authorization = `Bearer ${token}`;
 
@@ -58,13 +79,30 @@ api.interceptors.request.use((config) => {
     delete params.restaurant_id;
     delete params.site_id;
     config.params = hq ? { ...params, hq: 1 } : params;
-    return config;
+  } else {
+    const explicitSite =
+      Object.prototype.hasOwnProperty.call(params, "restaurant_id") ||
+      Object.prototype.hasOwnProperty.call(params, "site_id");
+    if (active && !explicitSite && !skipResortScope(config.url || "")) {
+      config.params = { ...params, restaurant_id: active, site_id: active };
+    }
   }
-  const explicitSite =
-    Object.prototype.hasOwnProperty.call(params, "restaurant_id") ||
-    Object.prototype.hasOwnProperty.call(params, "site_id");
-  if (active && !explicitSite && !skipResortScope(config.url || "")) {
-    config.params = { ...params, restaurant_id: active, site_id: active };
+  const method = String(config.method || "get").toLowerCase();
+  const offline = typeof navigator !== "undefined" && (navigator.onLine === false || getSyncStatus().online === false);
+  if (method === "get" && !config.__replay && !config.__warm && offline) {
+    const cached = await readCache(config);
+    if (cached !== undefined) {
+      config.adapter = () =>
+        Promise.resolve({
+          data: cached,
+          status: 200,
+          statusText: "Cached",
+          headers: {},
+          config,
+        });
+    } else {
+      config.timeout = 2500;
+    }
   }
   return config;
 });
