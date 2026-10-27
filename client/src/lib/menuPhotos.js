@@ -20,6 +20,15 @@ export const DEFAULT_MENU_PHOTOS = {
   "Seekh Kabab": "https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=600&q=80",
 };
 
+export function mediaUrl(url) {
+  const value = String(url || "");
+  if (!value.startsWith("/uploads")) return value;
+  if (typeof window === "undefined") return value;
+  const configured = window.tdcpDesktop?.apiBase;
+  if (!configured) return value;
+  return `${String(configured).replace(/\/api\/?$/, "")}${value}`;
+}
+
 export function menuPhoto(item) {
-  return item?.image_url || DEFAULT_MENU_PHOTOS[item?.name] || DEFAULT_MENU_PHOTOS["Chicken Karahi"];
+  return mediaUrl(item?.image_url || DEFAULT_MENU_PHOTOS[item?.name] || DEFAULT_MENU_PHOTOS["Chicken Karahi"]);
 }

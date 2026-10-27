@@ -60,6 +60,9 @@ export async function startTdcpServer() {
 
   if (process.env.TDCP_DESKTOP === "1") {
     process.env.PORT = process.env.TDCP_PORT || "17500";
+    if (!String(process.env.SYNC_URL || "").trim()) {
+      process.env.SYNC_URL = "https://kitcheniq.cloud";
+    }
   }
 
   const uploadsDir = uploadsPath();

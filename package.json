@@ -1,7 +1,7 @@
 {
   "name": "tdcp-rms",
   "private": true,
-  "version": "1.0.3",
+  "version": "1.0.4",
   "main": "desktop/main.mjs",
   "author": "Tourism Development Corporation of Punjab",
   "description": "TDCP Restaurant Management System",
@@ -23,18 +23,45 @@
   "build": {
     "appId": "pk.gov.tdcp.rms",
     "productName": "TDCP RMS",
+    "copyright": "Tourism Development Corporation of Punjab",
+    "asar": false,
     "directories": { "output": "release" },
-    "files": ["desktop/**/*", "client/dist/**/*", "package.json"],
-    "asar": true,
+    "files": [
+      "desktop/main.mjs",
+      "desktop/preload.cjs",
+      "server/app.js",
+      "server/package.json",
+      "server/.env",
+      "server/.env.example",
+      "server/src/**/*",
+      "server/node_modules/**/*",
+      "server/schema.sql",
+      "client/dist/**/*",
+      "client/public/tdcp-logo.png",
+      "package.json",
+      "!node_modules/**",
+      "!client/node_modules/**",
+      "!**/*.map",
+      "!**/README.md"
+    ],
     "win": {
       "icon": "client/public/tdcp-logo.png",
-      "target": [{ "target": "nsis", "arch": ["x64"] }]
+      "artifactName": "${productName}-Setup-${version}.${ext}",
+      "target": [
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "portable", "arch": ["x64"] }
+      ]
     },
     "nsis": {
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
       "shortcutName": "TDCP RMS"
+    },
+    "portable": {
+      "artifactName": "${productName}-Portable-${version}.${ext}"
     }
   }
 }

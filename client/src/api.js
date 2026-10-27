@@ -11,11 +11,8 @@ import {
 import { guestLoginPath } from "./lib/platform";
 
 export function apiBase() {
-  const desktop = typeof window !== "undefined" ? window.tdcpDesktop?.apiBase : "";
-  if (desktop) return desktop;
-  if (typeof navigator !== "undefined" && /Electron/i.test(navigator.userAgent || "")) {
-    return "https://kitcheniq.cloud/api";
-  }
+  const configured = typeof window !== "undefined" ? window.tdcpDesktop?.apiBase : "";
+  if (configured) return String(configured).replace(/\/$/, "");
   return "/api";
 }
 
@@ -89,7 +86,7 @@ api.interceptors.request.use(async (config) => {
   }
   const method = String(config.method || "get").toLowerCase();
   const offline = typeof navigator !== "undefined" && (navigator.onLine === false || getSyncStatus().online === false);
-  if (method === "get" && !config.__replay && !config.__warm && offline) {
+  if (method === "get" && !config.__replay && !config.__warm && !config.__fresh && offline) {
     const cached = await readCache(config);
     if (cached !== undefined) {
       config.adapter = () =>

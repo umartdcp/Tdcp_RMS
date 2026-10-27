@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { query } from "./db.js";
 import { authRequired } from "./middleware/auth.js";
+import { readUpload, saveDataUrl } from "./uploads.js";
 
 const status = {
   lastOk: null,
@@ -11,7 +12,7 @@ const status = {
 let debounce = null;
 
 function configured() {
-  return Boolean(process.env.SYNC_URL && process.env.SYNC_SECRET && process.env.SYNC_RESTAURANT_EMAIL);
+  return Boolean(String(process.env.SYNC_URL || "").trim() && String(process.env.SYNC_SECRET || "").trim());
 }
 
 function hqUrl() {
@@ -22,34 +23,84 @@ async function rows(sql, params = []) {
   return (await query(sql, params)).rows;
 }
 
-async function collect() {
-  const email = process.env.SYNC_RESTAURANT_EMAIL;
-  const user = (await rows(`SELECT restaurant_id FROM users WHERE lower(email)=lower($1)`, [email]))[0];
-  if (!user?.restaurant_id) {
-    throw new Error("SYNC_RESTAURANT_EMAIL ka restaurant nahi mila");
+async function orderItemsFor(orderIds) {
+  const ids = [...new Set(orderIds.map((id) => Number(id)).filter((id) => id > 0))];
+  if (!ids.length) return [];
+  const marks = ids.map((_, index) => `$${index + 1}`).join(", ");
+  return rows(`SELECT * FROM order_items WHERE order_id IN (${marks})`, ids);
+}
+
+function attachMenuImages(menu) {
+  for (const item of menu || []) {
+    const file = readUpload(item.image_url);
+    if (!file || file.length > 2 * 1024 * 1024) continue;
+    const ext = String(item.image_url).split(".").pop().toLowerCase();
+    const mime = ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg";
+    item.image_base64 = `data:${mime};base64,${file.toString("base64")}`;
   }
-  const rid = user.restaurant_id;
+}
+
+async function resolvedImage(item, prefix) {
+  if (item?.image_base64) {
+    try {
+      return saveDataUrl(prefix, item.image_base64);
+    } catch {
+      /* keep a normal URL when the file cannot be stored */
+    }
+  }
+  const url = String(item?.image_url || "");
+  return url && !url.startsWith("data:") ? url : null;
+}
+
+async function collectSite(rid, email) {
   const restaurant = (await rows(`SELECT * FROM restaurants WHERE id=$1`, [rid]))[0];
-  const orders = await rows(`SELECT * FROM orders WHERE restaurant_id=$1 ORDER BY id`, [rid]);
-  const orderIds = orders.map((o) => o.id);
-  let items = [];
-  if (orderIds.length) {
-    items = await rows(`SELECT * FROM order_items WHERE order_id = ANY($1::int[])`, [orderIds]);
-  }
+  if (!restaurant) return null;
+  const manager =
+    email ||
+    (await rows(`SELECT email FROM users WHERE restaurant_id=$1 AND role <> 'admin' ORDER BY id LIMIT 1`, [rid]))[0]
+      ?.email ||
+    null;
+  const orders = await rows(`SELECT * FROM orders WHERE restaurant_id=$1 OR site_id=$1 ORDER BY id`, [rid]);
   return {
-    manager_email: email,
+    manager_email: manager,
     restaurant,
-    tables: await rows(`SELECT * FROM dining_tables WHERE restaurant_id=$1`, [rid]),
-    categories: await rows(`SELECT * FROM menu_categories WHERE restaurant_id=$1 ORDER BY sort_order, id`, [rid]),
-    menu: await rows(`SELECT * FROM menu_items WHERE restaurant_id=$1`, [rid]),
-    customers: await rows(`SELECT * FROM customers WHERE restaurant_id=$1`, [rid]),
+    tables: await rows(`SELECT * FROM dining_tables WHERE restaurant_id=$1 OR site_id=$1`, [rid]),
+    categories: await rows(
+      `SELECT * FROM menu_categories WHERE restaurant_id=$1 OR site_id=$1 ORDER BY sort_order, id`,
+      [rid]
+    ),
+    menu: await rows(`SELECT * FROM menu_items WHERE restaurant_id=$1 OR site_id=$1`, [rid]),
+    customers: await rows(`SELECT * FROM customers WHERE restaurant_id=$1 OR site_id=$1`, [rid]),
     users: await rows(
-      `SELECT name, email, role FROM users WHERE restaurant_id=$1 AND role <> 'admin'`,
+      `SELECT name, email, role FROM users WHERE (restaurant_id=$1 OR site_id=$1) AND role <> 'admin'`,
       [rid]
     ),
     orders,
-    order_items: items,
+    order_items: await orderItemsFor(orders.map((order) => order.id)),
   };
+}
+
+async function collectPayloads() {
+  const email = String(process.env.SYNC_RESTAURANT_EMAIL || "").trim();
+  if (email) {
+    const user = (await rows(`SELECT restaurant_id FROM users WHERE lower(email)=lower($1)`, [email]))[0];
+    if (!user?.restaurant_id) throw new Error("SYNC_RESTAURANT_EMAIL ka restaurant nahi mila");
+    const payload = await collectSite(user.restaurant_id, email);
+    return payload ? [payload] : [];
+  }
+  const sites = await rows(
+    `SELECT s.id
+     FROM sites s
+     JOIN organizations o ON o.id = s.organization_id
+     WHERE s.is_active = 1 AND upper(o.code) = 'TDCP'
+     ORDER BY s.id`
+  );
+  const payloads = [];
+  for (const site of sites) {
+    const payload = await collectSite(site.id, null);
+    if (payload) payloads.push(payload);
+  }
+  return payloads;
 }
 
 async function findId(sql, params) {
@@ -137,17 +188,19 @@ export async function applyHqPayload(data) {
       m.name,
     ]);
     const cat = m.category_id ? categories[m.category_id] || null : null;
+    const imageUrl = await resolvedImage(m, `menu-${rid}`);
+    const available = !(m.is_available === false || m.is_available === 0 || m.is_available === "0");
     if (id) {
       await query(
         `UPDATE menu_items SET category_id=$1, price=$2, emoji=$3, image_url=$4, is_available=$5 WHERE id=$6`,
-        [cat, m.price, m.emoji, m.image_url, m.is_available !== false, id]
+        [cat, m.price, m.emoji, imageUrl, available, id]
       );
     } else {
       id = (
         await query(
           `INSERT INTO menu_items (organization_id, site_id, restaurant_id, category_id, name, price, emoji, image_url, is_available)
            VALUES ($1,$2,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
-          [orgId, rid, cat, m.name, m.price, m.emoji || "", m.image_url || null, m.is_available !== false]
+          [orgId, rid, cat, m.name, m.price, m.emoji || "", imageUrl, available]
         )
       ).rows[0].id;
     }
@@ -260,22 +313,26 @@ export async function applyHqPayload(data) {
 export async function pushToHq() {
   status.lastTry = new Date().toISOString();
   if (!configured()) {
-    status.lastError = "SYNC_URL / SYNC_SECRET / SYNC_RESTAURANT_EMAIL set karein";
+    status.lastError = "Set SYNC_URL and SYNC_SECRET so this PC can sync to the admin dashboard.";
     return getStatus();
   }
   try {
-    const payload = await collect();
-    const res = await fetch(`${hqUrl()}/api/sync/push`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-tdcp-sync": process.env.SYNC_SECRET,
-      },
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(25000),
-    });
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(body.message || `HQ ${res.status}`);
+    const payloads = await collectPayloads();
+    if (!payloads.length) throw new Error("No restaurant data to sync");
+    for (const payload of payloads) {
+      attachMenuImages(payload.menu);
+      const res = await fetch(`${hqUrl()}/api/sync/push`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-tdcp-sync": process.env.SYNC_SECRET,
+        },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(60000),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.message || `HQ ${res.status}`);
+    }
     status.lastOk = new Date().toISOString();
     status.lastError = null;
   } catch (err) {

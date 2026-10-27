@@ -158,7 +158,15 @@ function applyToCached(data, method, url, preview) {
     if (path.includes("/categories")) {
       return { ...data, categories: listOp(data.categories, method, id, preview) };
     }
-    if (/\/menu\/[^/]+\/image/.test(path)) return data;
+    const imageMatch = path.match(/^\/menu\/([^/]+)\/image$/);
+    if (imageMatch) {
+      const image = preview?.image_url || preview?.image_base64 || "";
+      if (!image) return data;
+      return {
+        ...data,
+        items: data.items.map((row) => (String(row?.id) === imageMatch[1] ? { ...row, image_url: image } : row)),
+      };
+    }
     if (path === "/menu" || /^\/menu\/[^/]+$/.test(path)) {
       return { ...data, items: listOp(data.items, method, id, preview) };
     }
@@ -313,10 +321,9 @@ async function probe() {
     return false;
   }
   try {
-    const base =
-      (typeof window !== "undefined" && window.tdcpDesktop?.apiBase) ||
-      (typeof navigator !== "undefined" && /Electron/i.test(navigator.userAgent || "") ? "https://kitcheniq.cloud/api" : "/api");
-    const res = await fetch(`${String(base).replace(/\/$/, "")}/health`, { cache: "no-store", signal: AbortSignal.timeout(4000) });
+    const configured = typeof window !== "undefined" ? window.tdcpDesktop?.apiBase : "";
+    const base = configured ? String(configured).replace(/\/$/, "") : "/api";
+    const res = await fetch(`${base}/health`, { cache: "no-store", signal: AbortSignal.timeout(4000) });
     const body = await res.json();
     const up = res.ok && body.db === "up";
     publish({ online: up });

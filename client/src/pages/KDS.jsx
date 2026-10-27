@@ -18,17 +18,19 @@ export default function KDS() {
   const saving = useRef(false);
 
   async function load() {
-    if (saving.current) return;
     try {
-      const { data } = await api.get("/orders");
+      const { data } = await api.get("/orders", { __fresh: true });
       setOrders(
-        (data || []).filter((o) => {
-          const status = String(o.status || "").toLowerCase();
-          return ["new", "preparing", "ready"].includes(status) && o.payment_status !== "paid";
+        (data || []).filter((order) => {
+          const status = String(order.status || "").toLowerCase();
+          if (["cancelled", "canceled", "completed"].includes(status)) return false;
+          if (order.payment_status === "paid" && !["new", "preparing", "ready"].includes(status)) return false;
+          return true;
         })
       );
-    } catch {
-      /* keep the kitchen tickets already saved on this device */
+      setError("");
+    } catch (err) {
+      setError(err.response?.data?.message || "");
     }
   }
 
@@ -36,24 +38,28 @@ export default function KDS() {
     load();
     const t = setInterval(load, 4000);
     window.addEventListener("tdcp-data-synced", load);
+    window.addEventListener("tdcp-notify-refresh", load);
     return () => {
       clearInterval(t);
       window.removeEventListener("tdcp-data-synced", load);
+      window.removeEventListener("tdcp-notify-refresh", load);
     };
   }, [activeRestaurantId]);
 
   const grouped = useMemo(() => {
     const g = { new: [], preparing: [], ready: [] };
-    orders.forEach((o) => {
-      const status = String(o.status || "").toLowerCase();
-      if (g[status]) g[status].push(o);
+    orders.forEach((order) => {
+      const status = String(order.status || "").toLowerCase();
+      const column = status === "preparing" || status === "ready" ? status : "new";
+      g[column].push(order);
     });
     return g;
   }, [orders]);
 
   async function advance(order) {
     const current = String(order.status || "").toLowerCase();
-    const status = nextStatus[current];
+    const column = current === "preparing" || current === "ready" ? current : "new";
+    const status = nextStatus[column];
     if (!status) return;
     saving.current = true;
     setError("");
@@ -106,7 +112,10 @@ export default function KDS() {
                     ))}
                   </ul>
                   {order.note ? <p className="mt-2 text-xs text-rose-600">Note: {order.note}</p> : null}
-                  {nextStatus[String(order.status || "").toLowerCase()] ? (
+                  {(() => {
+                    const current = String(order.status || "").toLowerCase();
+                    const column = current === "preparing" || current === "ready" ? current : "new";
+                    return nextStatus[column] ? (
                     <div className="mt-3 grid grid-cols-2 gap-2">
                       <button
                         type="button"
@@ -120,12 +129,13 @@ export default function KDS() {
                         onClick={() => advance(order)}
                         className="rounded-lg bg-tdcp-700 py-1.5 text-sm font-semibold text-white"
                       >
-                        {actionLabel[String(order.status || "").toLowerCase()]}
+                        {actionLabel[column]}
                       </button>
                     </div>
-                  ) : (
+                    ) : (
                     <p className="mt-3 text-center text-xs font-semibold text-emerald-700">Ready for payment on Orders</p>
-                  )}
+                  );
+                  })()}
                 </article>
               ))}
             </div>

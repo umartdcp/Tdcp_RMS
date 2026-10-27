@@ -31,7 +31,7 @@ import {
 } from "lucide-react";
 import api from "../api";
 import { formatPKR } from "../lib/format";
-import { DEFAULT_MENU_PHOTOS } from "../lib/menuPhotos";
+import { DEFAULT_MENU_PHOTOS, mediaUrl } from "../lib/menuPhotos";
 import { withTax } from "../lib/tax";
 
 const CAT_ICONS = {
@@ -60,7 +60,7 @@ const BADGES = {
 };
 
 function photoFor(item) {
-  return item?.image_url || DEFAULT_MENU_PHOTOS[item?.name] || "";
+  return mediaUrl(item?.image_url || DEFAULT_MENU_PHOTOS[item?.name] || "");
 }
 
 function itemMark(item) {
@@ -276,7 +276,7 @@ export default function POS() {
   useEffect(() => {
     let alive = true;
     function pull() {
-      return Promise.all([api.get("/menu"), api.get("/tables")]).then(([m, t]) => {
+      return Promise.all([api.get("/menu", { __fresh: true }), api.get("/tables", { __fresh: true })]).then(([m, t]) => {
         if (!alive) return;
         if (m.data?.items) setMenu(m.data);
         if (Array.isArray(t.data)) {
@@ -317,9 +317,11 @@ export default function POS() {
       pull().catch(() => {});
     }
     window.addEventListener("tdcp-data-synced", onSync);
+    window.addEventListener("tdcp-menu-changed", onSync);
     return () => {
       alive = false;
       window.removeEventListener("tdcp-data-synced", onSync);
+      window.removeEventListener("tdcp-menu-changed", onSync);
     };
   }, []);
 

@@ -96,7 +96,7 @@ export default function MenuPage() {
 
   async function load() {
     try {
-      const res = await api.get("/menu");
+      const res = await api.get("/menu", { __fresh: true });
       if (res?.data?.items) setData(res.data);
     } catch {
       /* keep the menu already saved on this device */
@@ -192,19 +192,38 @@ export default function MenuPage() {
         payload.image_url = form.image_url;
       }
       let saved;
+      let imageWarning = "";
       if (modal === "edit") {
         saved = (await api.patch(`/menu/${form.id}`, payload)).data;
         if (form.image_base64) {
-          saved = (await api.post(`/menu/${form.id}/image`, { image_base64: form.image_base64 })).data;
+          try {
+            saved = (await api.post(`/menu/${form.id}/image`, { image_base64: form.image_base64 }, { timeout: 60000 })).data;
+          } catch (err) {
+            imageWarning = err.response?.data?.message || "Item saved, but the photo could not be stored.";
+          }
         }
       } else {
         saved = (await api.post("/menu", { ...payload, image_url: payload.image_url || null })).data;
         if (form.image_base64 && saved?.id) {
-          await api.post(`/menu/${saved.id}/image`, { image_base64: form.image_base64 });
+          try {
+            saved = (await api.post(`/menu/${saved.id}/image`, { image_base64: form.image_base64 }, { timeout: 60000 })).data;
+          } catch (err) {
+            imageWarning = err.response?.data?.message || "Item saved, but the photo could not be stored.";
+          }
         }
       }
+      const savedId = saved?.id || form.id;
       setModal(null);
-      await load();
+      setCategory("All");
+      setSearch("");
+      const res = await api.get("/menu", { __fresh: true });
+      if (res?.data?.items) {
+        setData(res.data);
+        const index = res.data.items.findIndex((item) => String(item.id) === String(savedId));
+        setPage(index >= 0 ? Math.floor(index / PAGE_SIZE) + 1 : 1);
+      }
+      window.dispatchEvent(new Event("tdcp-menu-changed"));
+      setToast(imageWarning || (modal === "edit" ? "Menu item updated" : "Menu item added"));
     } catch (err) {
       setError(err.response?.data?.message || "Could not save this item.");
     } finally {
@@ -215,6 +234,7 @@ export default function MenuPage() {
   async function toggle(item) {
     setMenuOpen(null);
     await api.patch(`/menu/${item.id}`, { is_available: !item.is_available });
+    window.dispatchEvent(new Event("tdcp-menu-changed"));
     load();
   }
 
@@ -222,6 +242,7 @@ export default function MenuPage() {
     if (!window.confirm(`Remove ${item.name} from the menu?`)) return;
     setMenuOpen(null);
     await api.delete(`/menu/${item.id}`);
+    window.dispatchEvent(new Event("tdcp-menu-changed"));
     load();
   }
 

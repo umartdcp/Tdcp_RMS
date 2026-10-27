@@ -1,11 +1,9 @@
 import bcrypt from "bcryptjs";
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { Router } from "express";
 import Stripe from "stripe";
 import { query } from "../db.js";
 import { scheduleSync } from "../hqSync.js";
+import { saveDataUrl } from "../uploads.js";
 import { authRequired, requireRole } from "../middleware/auth.js";
 import { isOrgAdmin, isSuperAdmin } from "../modules/roles.js";
 import { canDeleteTdcpSite, removeSite, tdcpOrganizationId } from "../modules/siteDelete.js";
@@ -149,7 +147,8 @@ router.get("/menu", async (req, res) => {
   const items = await query(
     `SELECT mi.*, mc.name AS category_name
      FROM menu_items mi LEFT JOIN menu_categories mc ON mc.id = mi.category_id
-     WHERE mi.restaurant_id=$1 ORDER BY mi.name`,
+     WHERE mi.restaurant_id=$1 OR mi.site_id=$1
+     ORDER BY mi.name`,
     [restaurantId]
   );
   res.json({ categories: categories.rows, items: items.rows });
@@ -202,6 +201,7 @@ router.delete("/menu/categories/:id", async (req, res) => {
 });
 
 router.post("/menu", async (req, res) => {
+  if (!rid(req)) return res.status(400).json({ message: "Select a site first." });
   const { name, price, category_id, emoji, image_url } = req.body;
   const result = await query(
     `INSERT INTO menu_items (organization_id, site_id, restaurant_id, category_id, name, price, emoji, image_url)
@@ -209,6 +209,7 @@ router.post("/menu", async (req, res) => {
     [oid(req), rid(req), category_id || null, name, price, emoji || "", image_url || null]
   );
   audit(req, { action: "create_menu_item", entity: "menu_item", entityId: result.rows[0].id, details: `${name} @ ${price}` });
+  scheduleSync();
   res.status(201).json(result.rows[0]);
 });
 
@@ -221,55 +222,59 @@ router.patch("/menu/:id", async (req, res) => {
        is_available=COALESCE($3,is_available),
        category_id=COALESCE($4,category_id),
        image_url=COALESCE($5,image_url)
-     WHERE id=$6 AND restaurant_id=$7 RETURNING *`,
+     WHERE id=$6 AND (restaurant_id=$7 OR site_id=$7) RETURNING *`,
     [name, price, is_available, category_id, image_url, req.params.id, rid(req)]
   );
   if (result.rows[0]) {
     audit(req, { action: "update_menu_item", entity: "menu_item", entityId: result.rows[0].id, details: result.rows[0].name });
+    scheduleSync();
   }
   res.json(result.rows[0]);
 });
 
 router.post("/menu/:id/image", async (req, res) => {
-  const { image_base64 } = req.body || {};
-  if (!image_base64 || typeof image_base64 !== "string") {
-    return res.status(400).json({ message: "Image file is required" });
-  }
-  const match = image_base64.match(/^data:(image\/[a-zA-Z0-9+.-]+);base64,(.+)$/);
-  if (!match) {
-    return res.status(400).json({ message: "Invalid image data" });
-  }
-  const ext = match[1].includes("png") ? "png" : match[1].includes("webp") ? "webp" : "jpg";
-  const buf = Buffer.from(match[2], "base64");
-  if (buf.length > 5 * 1024 * 1024) {
-    return res.status(400).json({ message: "Image must be under 5MB" });
-  }
-  const uploadsDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "../../uploads");
-  fs.mkdirSync(uploadsDir, { recursive: true });
-  const filename = `menu-${req.params.id}-${Date.now()}.${ext}`;
-  fs.writeFileSync(path.join(uploadsDir, filename), buf);
-  const image_url = `/uploads/${filename}`;
-  const result = await query(`UPDATE menu_items SET image_url=$1 WHERE id=$2 AND restaurant_id=$3 RETURNING *`, [
-    image_url,
+  const current = await query(`SELECT id FROM menu_items WHERE id=$1 AND (restaurant_id=$2 OR site_id=$2)`, [
     req.params.id,
     rid(req),
   ]);
-  if (!result.rows[0]) return res.status(404).json({ message: "Item not found" });
+  if (!current.rows[0]) return res.status(404).json({ message: "Item not found" });
+  let image_url;
+  try {
+    image_url = saveDataUrl(`menu-${req.params.id}`, req.body?.image_base64);
+  } catch (err) {
+    if (err.statusCode) return res.status(err.statusCode).json({ message: err.message });
+    throw err;
+  }
+  const result = await query(`UPDATE menu_items SET image_url=$1 WHERE id=$2 RETURNING *`, [image_url, current.rows[0].id]);
+  scheduleSync();
   res.json(result.rows[0]);
 });
 
 router.delete("/menu/:id", async (req, res) => {
   const restaurantId = rid(req);
-  const current = await query(`SELECT id FROM menu_items WHERE id=$1 AND restaurant_id=$2`, [
+  const current = await query(`SELECT id FROM menu_items WHERE id=$1 AND (restaurant_id=$2 OR site_id=$2)`, [
     req.params.id,
     restaurantId,
   ]);
   if (!current.rows[0]) return res.status(404).json({ message: "Item not found" });
   await query(`UPDATE order_items SET menu_item_id=NULL WHERE menu_item_id=$1`, [req.params.id]);
-  await query(`DELETE FROM menu_items WHERE id=$1 AND restaurant_id=$2`, [req.params.id, restaurantId]);
+  await query(`DELETE FROM menu_items WHERE id=$1 AND (restaurant_id=$2 OR site_id=$2)`, [req.params.id, restaurantId]);
   audit(req, { action: "delete_menu_item", entity: "menu_item", entityId: Number(req.params.id) });
+  scheduleSync();
   res.json({ ok: true });
 });
+
+async function orderItemRows(orderIds) {
+  const ids = [...new Set((orderIds || []).map((id) => Number(id)).filter((id) => id > 0))];
+  if (!ids.length) return [];
+  const marks = ids.map((_, index) => `$${index + 1}`).join(", ");
+  return (await query(`SELECT * FROM order_items WHERE order_id IN (${marks})`, ids)).rows;
+}
+
+function menuItemId(value) {
+  const id = Number(value);
+  return Number.isInteger(id) && id > 0 ? id : null;
+}
 
 router.get("/orders", async (req, res) => {
   if (!rid(req)) return res.json([]);
@@ -284,13 +289,13 @@ router.get("/orders", async (req, res) => {
   }
   sql += " ORDER BY o.created_at DESC LIMIT 200";
   const orders = await query(sql, params);
-  const ids = orders.rows.map((o) => o.id);
-  let items = [];
-  if (ids.length) {
-    const itemRows = await query(`SELECT * FROM order_items WHERE order_id = ANY($1::int[])`, [ids]);
-    items = itemRows.rows;
-  }
-  res.json(orders.rows.map((o) => ({ ...o, items: items.filter((i) => i.order_id === o.id) })));
+  const items = await orderItemRows(orders.rows.map((o) => o.id));
+  res.json(
+    orders.rows.map((o) => ({
+      ...o,
+      items: items.filter((i) => Number(i.order_id) === Number(o.id)),
+    }))
+  );
 });
 
 router.get("/orders/:id", async (req, res) => {
@@ -298,7 +303,7 @@ router.get("/orders/:id", async (req, res) => {
     `SELECT o.*, t.label AS table_label
      FROM orders o
      LEFT JOIN dining_tables t ON t.id = o.table_id
-     WHERE o.id=$1 AND o.restaurant_id=$2`,
+     WHERE o.id=$1 AND (o.restaurant_id=$2 OR o.site_id=$2)`,
     [req.params.id, rid(req)]
   );
   const order = found.rows[0];
@@ -339,6 +344,7 @@ router.get("/notifications", async (req, res) => {
 
 router.post("/orders", async (req, res) => {
   const restaurantId = rid(req);
+  if (!restaurantId) return res.status(400).json({ message: "Select a site first." });
   const { table_id, items = [], note, status = "new", client_ref: clientRef = null } = req.body;
   if (clientRef) {
     const existing = await query(
@@ -363,11 +369,23 @@ router.post("/orders", async (req, res) => {
     const price = Number(item.price);
     const qty = Number(item.qty || 1);
     subtotal += price * qty;
-    await query(
-      `INSERT INTO order_items (organization_id, site_id, order_id, menu_item_id, name, qty, price)
-       VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-      [oid(req), restaurantId, orderId, item.menu_item_id || null, item.name, qty, price]
-    );
+    const line = [oid(req), restaurantId, orderId, menuItemId(item.menu_item_id), item.name, qty, price];
+    try {
+      await query(
+        `INSERT INTO order_items (organization_id, site_id, order_id, menu_item_id, name, qty, price)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        line
+      );
+    } catch (err) {
+      const missingMenu = err?.errno === 1452 || err?.code === "ER_NO_REFERENCED_ROW_2";
+      if (!missingMenu || line[3] == null) throw err;
+      line[3] = null;
+      await query(
+        `INSERT INTO order_items (organization_id, site_id, order_id, menu_item_id, name, qty, price)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        line
+      );
+    }
   }
   const billed = withTax(subtotal);
   const updated = await query(`UPDATE orders SET subtotal=$1, tax=$2, total=$3 WHERE id=$4 RETURNING *`, [
@@ -907,38 +925,13 @@ router.post("/restaurants/:id/image", requireRole("admin", "super_admin", "org_a
   if (isOrgAdmin(req.user) && !isSuperAdmin(req.user) && Number(site.organization_id) !== Number(req.user.organization_id)) {
     return res.status(403).json({ message: "That site is not in your organization." });
   }
-  const { image_base64 } = req.body || {};
-  if (!image_base64 || typeof image_base64 !== "string") {
-    return res.status(400).json({ message: "Image file is required" });
-  }
-  const match = image_base64.match(/^data:(image\/[a-zA-Z0-9+.-]+);base64,(.+)$/);
-  if (!match) {
-    return res.status(400).json({ message: "Invalid image data" });
-  }
-  const ext = match[1].includes("png") ? "png" : match[1].includes("webp") ? "webp" : "jpg";
-  const buf = Buffer.from(match[2], "base64");
-  if (buf.length > 5 * 1024 * 1024) {
-    return res.status(400).json({ message: "Image must be under 5MB" });
-  }
-  const uploadsDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "../../uploads");
-  fs.mkdirSync(uploadsDir, { recursive: true });
+  let image_url;
   try {
-    fs.chmodSync(uploadsDir, 0o777);
-  } catch {
-    /* keep going and report a write error below */
-  }
-  const filename = `resort-${req.params.id}-${Date.now()}.${ext}`;
-  const filePath = path.join(uploadsDir, filename);
-  try {
-    fs.writeFileSync(filePath, buf);
-    fs.chmodSync(filePath, 0o644);
+    image_url = saveDataUrl(`resort-${req.params.id}`, req.body?.image_base64);
   } catch (err) {
-    if (err?.code === "EACCES") {
-      return res.status(500).json({ message: "The uploads folder is not writable. In cPanel File Manager, set tdcp-rms/uploads to 755 or 777." });
-    }
+    if (err.statusCode) return res.status(err.statusCode).json({ message: err.message });
     throw err;
   }
-  const image_url = `/uploads/${filename}`;
   await query(`UPDATE sites SET image_url=$1, updated_at=NOW() WHERE id=$2`, [image_url, req.params.id]);
   const row = await restaurantView(req.params.id);
   if (!row) return res.status(404).json({ message: "Restaurant not found" });
