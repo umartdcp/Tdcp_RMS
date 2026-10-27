@@ -1,7 +1,7 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { Router } from "express";
-import { query } from "../db.js";
+import { query, withOrganization } from "../db.js";
 import { writeAudit } from "../modules/audit.js";
 import { isSuperAdmin } from "../modules/roles.js";
 import { withSafeLogo, organizationLogoUrl } from "../orgBranding.js";
@@ -135,18 +135,29 @@ router.get("/branding/:code", async (req, res) => {
   res.json({ organization: withSafeLogo(row) });
 });
 
+async function locateAccount(email) {
+  const sql = `${USER_SQL} WHERE lower(u.email)=lower($1) OR lower(COALESCE(u.username,''))=lower($1)`;
+  const local = (await query(sql, [email])).rows[0];
+  if (local) return { user: local, dbName: null };
+  const orgs = (await query(`SELECT db_name FROM organizations WHERE db_name IS NOT NULL AND TRIM(db_name) <> ''`)).rows;
+  for (const org of orgs) {
+    const found = await withOrganization(org.db_name, async () => (await query(sql, [email])).rows[0]);
+    if (found) return { user: found, dbName: org.db_name };
+  }
+  return { user: null, dbName: null };
+}
+
 router.post("/login", async (req, res) => {
   const { email, password, organization_code, portal } = req.body || {};
   if (!email || !password) {
     return res.status(400).json({ message: "Email and password are required" });
   }
-  const result = await query(`${USER_SQL} WHERE lower(u.email)=lower($1) OR lower(COALESCE(u.username,''))=lower($1)`, [
-    email,
-  ]);
-  const user = result.rows[0];
+  const located = await locateAccount(email);
+  const user = located.user;
   if (!user || !(await bcrypt.compare(password, user.password_hash))) {
     return res.status(401).json({ message: "Invalid email or password" });
   }
+  const finish = async () => {
   if (user.is_active === false) {
     return res.status(403).json({ message: "This account is disabled." });
   }
@@ -159,8 +170,17 @@ router.post("/login", async (req, res) => {
   }
   const portalKind = String(portal || "").toLowerCase();
   const orgCode = String(organization_code || "").trim();
+  const desktop = process.env.TDCP_DESKTOP === "1";
+  if (desktop) {
+    if (role !== "super_admin") {
+      const accountOrg = String(user.organization_code || "").toUpperCase();
+      if (accountOrg && accountOrg !== "TDCP") {
+        return res.status(403).json({ message: "This app is for TDCP accounts only." });
+      }
+    }
+  }
   const servexPortal = portalKind === "servex" || orgCode.toUpperCase() === "SERVEX";
-  if (portalKind !== "auto") {
+  if (!desktop && portalKind !== "auto") {
     if (servexPortal) {
       if (role !== "super_admin") {
         return res.status(403).json({ message: "This login is for ServeX Super Admins only. Use your restaurant login." });
@@ -212,6 +232,9 @@ router.post("/login", async (req, res) => {
     token,
     ...session,
   });
+  };
+  if (located.dbName) return withOrganization(located.dbName, finish);
+  return finish();
 });
 
 router.get("/me", async (req, res) => {
@@ -220,10 +243,21 @@ router.get("/me", async (req, res) => {
   if (!token) return res.status(401).json({ message: "Authentication required" });
   try {
     const payload = jwt.verify(token, secret());
-    const result = await query(`${USER_SQL} WHERE u.id=$1`, [payload.id]);
-    const user = result.rows[0];
-    if (!user) return res.status(401).json({ message: "Invalid token" });
-    res.json(await sessionBody(user));
+    const load = async () => {
+      const result = await query(`${USER_SQL} WHERE u.id=$1`, [payload.id]);
+      const user = result.rows[0];
+      if (!user) return null;
+      return sessionBody(user);
+    };
+    let session = null;
+    if (payload.organization_id) {
+      const org = (await query(`SELECT db_name FROM organizations WHERE id=$1`, [payload.organization_id])).rows[0];
+      session = org?.db_name ? await withOrganization(org.db_name, load) : await load();
+    } else {
+      session = await load();
+    }
+    if (!session) return res.status(401).json({ message: "Invalid token" });
+    res.json(session);
   } catch (err) {
     if (err?.name === "JsonWebTokenError" || err?.name === "TokenExpiredError") {
       return res.status(401).json({ message: "Invalid token" });

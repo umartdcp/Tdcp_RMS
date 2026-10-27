@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import dotenv from "dotenv";
@@ -8,6 +9,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: process.env.TDCP_ENV_PATH || path.join(__dirname, "../.env") });
 
 let pool = null;
+const orgPools = new Map();
+const requestDb = new AsyncLocalStorage();
 let dbOnline = false;
 let lastPing = 0;
 let lastDbError = "";
@@ -35,6 +38,24 @@ export function lastDatabaseError() {
 function isConnectionError(err) {
   const code = err?.code || err?.errno;
   return CONNECTION_ERRORS.has(code) || /connect|ECONN|closed the connection/i.test(String(err?.message || ""));
+}
+
+function activePool() {
+  return requestDb.getStore()?.pool || pool;
+}
+
+export function orgDatabaseName(code) {
+  const safe = String(code || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_|_$/g, "")
+    .slice(0, 40);
+  if (!safe) throw new Error("Organization code is required.");
+  return `rms_${safe}`;
+}
+
+export function runWithPool(nextPool, fn) {
+  return requestDb.run({ pool: nextPool }, fn);
 }
 
 function offlineError() {
@@ -169,13 +190,13 @@ async function addColumnIfMissing(sql) {
   if (!match) return null;
   const [, table, column, type] = match;
   const mysqlType = /^timestamptz$/i.test(type) ? "DATETIME" : type;
-  const [rows] = await pool.query(
+  const [rows] = await activePool().query(
     `SELECT COUNT(*) AS c FROM information_schema.COLUMNS
      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?`,
     [table, column]
   );
   if (Number(rows[0].c) > 0) return { rows: [], rowCount: 0 };
-  await pool.query(`ALTER TABLE \`${table}\` ADD COLUMN \`${column}\` ${mysqlType}`);
+  await activePool().query(`ALTER TABLE \`${table}\` ADD COLUMN \`${column}\` ${mysqlType}`);
   return { rows: [], rowCount: 0 };
 }
 
@@ -193,7 +214,7 @@ async function fetchReturning(original, returning, result, params) {
     id = params[Number(idMatch[1]) - 1];
   }
   if (!id) return { rows: [], rowCount: 0 };
-  const [rows] = await pool.query(`SELECT ${cols} FROM \`${table}\` WHERE id = ?`, [id]);
+  const [rows] = await activePool().query(`SELECT ${cols} FROM \`${table}\` WHERE id = ?`, [id]);
   return { rows, rowCount: rows.length };
 }
 
@@ -225,7 +246,7 @@ export async function query(text, params = []) {
   const up = await ensureDb();
   if (!up || !pool) return Promise.reject(offlineError());
   try {
-    return await runQuery(pool, text, params);
+    return await runQuery(activePool(), text, params);
   } catch (err) {
     if (isConnectionError(err)) {
       dbOnline = false;
@@ -238,7 +259,7 @@ export async function query(text, params = []) {
 export async function withTransaction(work) {
   const up = await ensureDb();
   if (!up || !pool) throw offlineError();
-  const conn = await pool.getConnection();
+  const conn = await activePool().getConnection();
   const run = (text, params = []) => runQuery(conn, text, params);
   try {
     await conn.beginTransaction();
@@ -260,10 +281,87 @@ export async function withTransaction(work) {
 export async function closeDb() {
   dbOnline = false;
   lastPing = 0;
-  if (pool) {
-    await pool.end();
-    pool = null;
+  const pools = [pool, ...orgPools.values()];
+  pool = null;
+  orgPools.clear();
+  await Promise.all(
+    pools.filter(Boolean).map((item) => item.end().catch(() => {}))
+  );
+}
+
+export async function platformQuery(text, params = []) {
+  if (!pool) {
+    const up = await ensureDb();
+    if (!up || !pool) return Promise.reject(offlineError());
   }
+  return runWithPool(pool, () => query(text, params));
+}
+
+export async function rawPlatform(sql, params = []) {
+  const up = await ensureDb();
+  if (!up || !pool) throw offlineError();
+  const [rows] = await pool.query(sql, params);
+  return rows;
+}
+
+export async function ensureOrganizationDatabase(code) {
+  const name = orgDatabaseName(code);
+  await rawPlatform(
+    `CREATE DATABASE IF NOT EXISTS \`${name}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`
+  );
+  return name;
+}
+
+export async function dropOrganizationDatabase(dbName) {
+  if (!/^rms_[a-z0-9_]+$/.test(String(dbName || ""))) return;
+  const existing = orgPools.get(dbName);
+  if (existing) {
+    orgPools.delete(dbName);
+    await existing.end().catch(() => {});
+  }
+  await rawPlatform(`DROP DATABASE IF EXISTS \`${dbName}\``);
+}
+
+export async function getOrganizationPool(dbName) {
+  if (!/^rms_[a-z0-9_]+$/.test(String(dbName || ""))) {
+    throw new Error("Invalid organization database.");
+  }
+  const cached = orgPools.get(dbName);
+  if (cached) return cached;
+  const options = { ...poolOptions(), database: dbName };
+  const next = mysql.createPool(options);
+  await next.query("SELECT 1");
+  orgPools.set(dbName, next);
+  return next;
+}
+
+export function withOrganization(dbName, fn) {
+  return getOrganizationPool(dbName).then((next) => runWithPool(next, fn));
+}
+
+export async function eachOrganization(fn) {
+  const orgs = (
+    await platformQuery(
+      `SELECT id, code, name, db_name FROM organizations WHERE db_name IS NOT NULL AND TRIM(db_name) <> '' ORDER BY name`
+    )
+  ).rows;
+  const all = [];
+  for (const org of orgs) {
+    const part = await withOrganization(org.db_name, () => fn(org));
+    if (Array.isArray(part)) all.push(...part);
+  }
+  return all;
+}
+
+export async function bindRequestDatabase(req) {
+  const role = req.user?.role;
+  const requested = Number(req.query?.organization_id || req.body?.organization_id || 0);
+  const orgId = role === "super_admin" || role === "admin" ? requested : Number(req.user?.organization_id || 0);
+  if (!orgId) return (fn) => fn();
+  const row = (await platformQuery(`SELECT db_name FROM organizations WHERE id=$1`, [orgId])).rows[0];
+  if (!row?.db_name) return (fn) => fn();
+  const next = await getOrganizationPool(row.db_name);
+  return (fn) => runWithPool(next, fn);
 }
 
 export { pool };

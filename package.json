@@ -1,7 +1,7 @@
 {
   "name": "tdcp-rms",
   "private": true,
-  "version": "1.0.4",
+  "version": "1.0.6",
   "main": "desktop/main.mjs",
   "author": "Tourism Development Corporation of Punjab",
   "description": "TDCP Restaurant Management System",

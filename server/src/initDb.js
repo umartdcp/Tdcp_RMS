@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import bcrypt from "bcryptjs";
-import { query } from "./db.js";
+import { query, ensureOrganizationDatabase, withOrganization, rawPlatform, dropOrganizationDatabase, eachOrganization } from "./db.js";
 import { DEFAULT_MENU, SHARED_MENU_CATEGORIES } from "./menuCatalog.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -257,162 +257,85 @@ async function seedTdcpOnly() {
 }
 
 async function seedIfEmpty() {
-  const existing = await query("SELECT COUNT(*)::int AS c FROM organizations");
-  if (existing.rows[0].c > 0) return;
-
+  const existing = await query(`SELECT id FROM users WHERE role IN ('super_admin','admin') LIMIT 1`);
+  if (existing.rows[0]) return;
   await seedRoles();
-  if (tdcpOnly()) {
-    await seedTdcpOnly();
-    return;
-  }
-
-  const tdcp = await insertOrg({
-    code: "TDCP",
-    name: "Tourism Development Corporation of Punjab",
-    logo_url: "/tdcp-logo.png",
-    primary_color: "#0c553c",
-    secondary_color: "#2fa87a",
-    app_name: "TDCP Restaurant Management System",
-    address: "Lahore, Punjab",
-    email: "info@tdcp.gov.pk",
-  });
-  const madina = await insertOrg({
-    code: "MADINA",
-    name: "Madina Restaurant",
-    logo_url: "",
-    primary_color: "#7c2d12",
-    secondary_color: "#ea580c",
-    background_color: "#fff7ed",
-    text_color: "#431407",
-    app_name: "Madina Restaurant",
-    address: "Lahore",
-    email: "hello@madina.example",
-  });
-  const khabba = await insertOrg({
-    code: "KHABBA",
-    name: "Khabba House",
-    logo_url: "",
-    primary_color: "#1e3a8a",
-    secondary_color: "#3b82f6",
-    background_color: "#eff6ff",
-    text_color: "#1e3a8a",
-    app_name: "Khabba House",
-    address: "Punjab",
-    email: "hello@khabba.example",
-  });
-
-  const patriata = await insertSite(tdcp.id, {
-    code: "PATRIATA",
-    name: "TDCP - Patriata",
-    address: "Patriata, Murree",
-  });
-  const changa = await insertSite(tdcp.id, {
-    code: "CHANGA_MANGA",
-    name: "TDCP - Changa Manga",
-    address: "Changa Manga, Kasur",
-  });
-  const hiran = await insertSite(tdcp.id, {
-    code: "HIRAN_MINAR",
-    name: "TDCP - Hiran Minar",
-    address: "Hiran Minar, Sheikhupura",
-  });
-  const madinaMain = await insertSite(madina.id, {
-    code: "MAIN_BRANCH",
-    name: "Madina Restaurant - Main Branch",
-    address: "Lahore",
-  });
-  const khabbaLhr = await insertSite(khabba.id, {
-    code: "LAHORE",
-    name: "Khabba House - Lahore",
-    address: "Lahore",
-  });
-  const khabbaIsb = await insertSite(khabba.id, {
-    code: "ISLAMABAD",
-    name: "Khabba House - Islamabad",
-    address: "Islamabad",
-  });
-
-  const liveSites = [];
-  for (const [code, name, address] of TDCP_LIVE_SITES) {
-    liveSites.push(await insertSite(tdcp.id, { code, name, address }));
-  }
-  const sites = [patriata, changa, hiran, ...liveSites, madinaMain, khabbaLhr, khabbaIsb];
-  for (const site of sites) {
-    await seedDiningTables(site.organization_id, site.id);
-    await seedMenu(site.organization_id, site.id);
-  }
-
   await insertUser({
     role: "super_admin",
     name: "Platform Super Admin",
     email: "superadmin@rms.local",
     username: "superadmin",
-    password: "admin123",
+    password: process.env.SEED_ADMIN_PASSWORD || "admin123",
   });
-  await insertUser({
-    orgId: tdcp.id,
-    role: "org_admin",
-    name: "TDCP Organization Admin",
-    email: "admin@tdcp.gov.pk",
-    username: "tdcp_admin",
-    password: "admin123",
-  });
-  await insertUser({
-    orgId: tdcp.id,
-    siteId: patriata.id,
-    role: "manager",
-    name: "Patriata Admin",
-    email: "patriata_admin@tdcp.gov.pk",
-    username: "patriata_admin",
-    password: "admin123",
-  });
-  await insertUser({
-    orgId: tdcp.id,
-    siteId: changa.id,
-    role: "manager",
-    name: "Changa Manga Admin",
-    email: "changa_admin@tdcp.gov.pk",
-    username: "changa_admin",
-    password: "admin123",
-  });
-  await insertUser({
-    orgId: tdcp.id,
-    siteId: hiran.id,
-    role: "manager",
-    name: "Hiran Minar Admin",
-    email: "hiran_admin@tdcp.gov.pk",
-    username: "hiran_admin",
-    password: "admin123",
-  });
-  await insertUser({
-    orgId: madina.id,
-    siteId: madinaMain.id,
-    role: "manager",
-    name: "Madina Admin",
-    email: "madina_admin@madina.local",
-    username: "madina_admin",
-    password: "admin123",
-  });
-  await insertUser({
-    orgId: khabba.id,
-    siteId: khabbaLhr.id,
-    role: "manager",
-    name: "Khabba Lahore Admin",
-    email: "khabba_lahore_admin@khabba.local",
-    username: "khabba_lahore_admin",
-    password: "admin123",
-  });
-  await insertUser({
-    orgId: khabba.id,
-    siteId: khabbaIsb.id,
-    role: "manager",
-    name: "Khabba Islamabad Admin",
-    email: "khabba_islamabad_admin@khabba.local",
-    username: "khabba_islamabad_admin",
-    password: "admin123",
-  });
+}
 
-  console.log("Seeded organizations TDCP, MADINA, KHABBA and site admins (password: admin123)");
+export async function provisionOrganizationDatabase(org) {
+  const dbName = await ensureOrganizationDatabase(org.code);
+  await query(`UPDATE organizations SET db_name=$1 WHERE id=$2`, [dbName, org.id]);
+  org.db_name = dbName;
+  await withOrganization(dbName, async () => {
+    if (!(await tableExists("organizations"))) await applyFullSchema();
+    await query(`ALTER TABLE organizations ADD COLUMN db_name VARCHAR(64) NULL`).catch(() => {});
+    await seedRoles();
+    const exists = (await query(`SELECT id FROM organizations WHERE id=$1`, [org.id])).rows[0];
+    if (!exists) {
+      await query(
+        `INSERT INTO organizations
+          (id, code, name, logo_url, favicon_url, primary_color, secondary_color, background_color, text_color, app_name, address, phone, email, is_active, db_name)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,1,$14)`,
+        [
+          org.id,
+          org.code,
+          org.name,
+          org.logo_url || null,
+          org.favicon_url || null,
+          org.primary_color || "#0c553c",
+          org.secondary_color || "#2fa87a",
+          org.background_color || "#f4f6f5",
+          org.text_color || "#143028",
+          org.app_name || org.name,
+          org.address || null,
+          org.phone || null,
+          org.email || null,
+          dbName,
+        ]
+      );
+    }
+    await ensureRuntimeColumns();
+  });
+  return dbName;
+}
+
+export async function flushLocalDatabases() {
+  if (!isSafeDevDatabase()) {
+    throw new Error("Refusing to flush a database that is not the local tdcp_rms database.");
+  }
+  const rows = await rawPlatform("SHOW DATABASES");
+  for (const row of rows) {
+    const name = String(row.Database || row.database || "");
+    if (/^rms_[a-z0-9_]+$/.test(name)) await dropOrganizationDatabase(name);
+  }
+  await applyFullSchema();
+  await seedRoles();
+  await insertUser({
+    role: "super_admin",
+    name: "Platform Super Admin",
+    email: "superadmin@rms.local",
+    username: "superadmin",
+    password: process.env.SEED_ADMIN_PASSWORD || "admin123",
+  });
+}
+
+async function ensureRuntimeColumns() {
+  await query(`ALTER TABLE sites ADD COLUMN IF NOT EXISTS image_url TEXT`);
+  await query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS client_ref VARCHAR(64)`);
+  await query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS updated_at DATETIME NULL`);
+  await query(`ALTER TABLE orders MODIFY table_id INT NULL`).catch(() => {});
+  await query(`ALTER TABLE orders MODIFY status VARCHAR(32) NOT NULL DEFAULT 'new'`).catch(() => {});
+  await query(`CREATE UNIQUE INDEX orders_client_ref ON orders (client_ref)`).catch((err) => {
+    const code = err?.mysqlCode || err?.code;
+    if (code !== "ER_DUP_KEYNAME" && err?.errno !== 1061) throw err;
+  });
 }
 
 export async function initDb() {
@@ -437,14 +360,10 @@ export async function initDb() {
      WHERE upper(code) = 'TDCP'
        AND (logo_url IS NULL OR btrim(logo_url) = '')`
   );
-  await query(`ALTER TABLE sites ADD COLUMN IF NOT EXISTS image_url TEXT`);
-  await query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS client_ref VARCHAR(64)`);
-  await query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS updated_at DATETIME NULL`);
-  await query(`ALTER TABLE orders MODIFY table_id INT NULL`).catch(() => {});
-  await query(`ALTER TABLE orders MODIFY status VARCHAR(32) NOT NULL DEFAULT 'new'`).catch(() => {});
-  await query(`CREATE UNIQUE INDEX orders_client_ref ON orders (client_ref)`).catch((err) => {
-    const code = err?.mysqlCode || err?.code;
-    if (code !== "ER_DUP_KEYNAME" && err?.errno !== 1061) throw err;
+  await ensureRuntimeColumns();
+  await eachOrganization(async () => {
+    await ensureRuntimeColumns();
+    return [];
   });
   await query(`DROP VIEW IF EXISTS restaurants`);
   await query(`

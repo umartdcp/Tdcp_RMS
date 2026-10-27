@@ -1,7 +1,7 @@
 import bcrypt from "bcryptjs";
 import { Router } from "express";
 import Stripe from "stripe";
-import { query } from "../db.js";
+import { query, eachOrganization } from "../db.js";
 import { scheduleSync } from "../hqSync.js";
 import { saveDataUrl } from "../uploads.js";
 import { authRequired, requireRole } from "../middleware/auth.js";
@@ -839,6 +839,10 @@ function canManageSites(user) {
 }
 
 router.get("/restaurants", requireRole("admin", "super_admin", "org_admin"), async (req, res) => {
+  if (isSuperAdmin(req.user) && !Number(req.query.organization_id || 0)) {
+    const rows = await eachOrganization(async () => (await query(`SELECT * FROM restaurants ORDER BY id`)).rows);
+    return res.json(rows);
+  }
   if (isOrgAdmin(req.user) && !isSuperAdmin(req.user)) {
     return res.json(
       (

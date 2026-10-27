@@ -176,9 +176,14 @@ export function AuthProvider({ children }) {
           organization_code: window.tdcpDesktop?.tdcpOnly || /Electron/i.test(navigator.userAgent || "") ? "tdcp" : organizationCode || undefined,
           portal: window.tdcpDesktop?.tdcpOnly || /Electron/i.test(navigator.userAgent || "") ? "org" : portal || undefined,
         });
+        if (!data?.token || !data?.user?.email) {
+          const error = new Error("Sign-in service is not running.");
+          error.response = { data: { message: "Sign-in service is not running. Start MySQL, then open TDCP RMS again." } };
+          throw error;
+        }
         const orgCode = String(data.organization?.code || "").toUpperCase();
         const desktopTdcp = Boolean(window.tdcpDesktop?.tdcpOnly) || /Electron/i.test(navigator.userAgent || "");
-        if (desktopTdcp && (data.user?.role === "super_admin" || data.user?.role === "admin" || (orgCode && orgCode !== "TDCP"))) {
+        if (desktopTdcp && orgCode && orgCode !== "TDCP") {
           const error = new Error("This app is for TDCP accounts only.");
           error.response = { data: { message: "This app is for TDCP accounts only." } };
           throw error;

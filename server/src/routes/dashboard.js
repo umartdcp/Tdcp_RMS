@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { query } from "../db.js";
+import { query, eachOrganization } from "../db.js";
 import { authRequired } from "../middleware/auth.js";
 import { isOrgAdmin, isSuperAdmin } from "../modules/roles.js";
 import { attachTenant, rid } from "../tenant.js";
@@ -181,6 +181,34 @@ router.get("/", async (req, res) => {
 router.get("/overview", async (req, res) => {
   if (!isSuperAdmin(req.user) && !isOrgAdmin(req.user)) {
     return res.status(403).json({ message: "Admin only" });
+  }
+  if (isSuperAdmin(req.user) && !Number(req.query.organization_id || req.user.organization_id || 0)) {
+    const restaurants = await eachOrganization(async () => {
+      const list = (await query(`SELECT * FROM restaurants ORDER BY id`)).rows;
+      const stats = [];
+      for (const r of list) {
+        const row = await query(
+          `SELECT COALESCE(SUM(total),0)::float AS sales, COUNT(*)::int AS orders
+           FROM orders WHERE (restaurant_id = ANY($1::int[]) OR site_id = ANY($1::int[])) AND payment_status='paid' AND created_at::date = CURRENT_DATE`,
+          [r.id]
+        );
+        const month = await query(
+          `SELECT COALESCE(SUM(total),0)::float AS sales
+           FROM orders WHERE (restaurant_id = ANY($1::int[]) OR site_id = ANY($1::int[])) AND payment_status='paid' AND created_at >= date_trunc('month', NOW())`,
+          [r.id]
+        );
+        const staff = await query(`SELECT COUNT(*)::int AS c FROM users WHERE (restaurant_id = ANY($1::int[]) OR site_id = ANY($1::int[])) OR site_id=$1`, [r.id]);
+        stats.push({
+          ...r,
+          today_sales: row.rows[0].sales,
+          today_orders: row.rows[0].orders,
+          month_sales: month.rows[0].sales,
+          user_count: staff.rows[0].c,
+        });
+      }
+      return stats;
+    });
+    return res.json({ restaurants });
   }
   const params = [];
   let sql = `SELECT * FROM restaurants WHERE 1=1`;

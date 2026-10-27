@@ -53,7 +53,8 @@ function listenPort(preferred) {
 export async function startTdcpServer() {
   dotenv.config({ path: envPath() });
   const production = process.env.NODE_ENV === "production";
-  if (production && (!process.env.JWT_SECRET || /dev-secret|change-this/i.test(process.env.JWT_SECRET))) {
+  const desktop = process.env.TDCP_DESKTOP === "1";
+  if (!desktop && production && (!process.env.JWT_SECRET || /dev-secret|change-this/i.test(process.env.JWT_SECRET))) {
     throw new Error("Set a strong JWT_SECRET in the cPanel Node.js environment (or server/.env) before going live.");
   }
   process.env.JWT_SECRET ||= "tdcp-rms-dev-secret-change-me";
@@ -166,13 +167,13 @@ export async function startTdcpServer() {
     server.on("error", reject);
   });
 
-  connectAndPrepare()
-    .then((connected) => {
-      if (!connected) {
-        console.log("MySQL is offline. The app will keep running and sync when the database is back.");
-      }
-    })
-    .catch((err) => console.error(err.message));
+  const connected = await connectAndPrepare().catch((err) => {
+    console.error(err.message);
+    return false;
+  });
+  if (!connected) {
+    console.log("MySQL is offline. The app will keep running and sync when the database is back.");
+  }
   setInterval(() => {
     connectAndPrepare().catch((err) => console.error(err.message));
   }, 8000);

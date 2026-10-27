@@ -32,19 +32,7 @@ router.get("/users", requireRole("admin", "super_admin", "org_admin", "manager")
     );
     return res.json(rows.rows);
   }
-  const siteFilter = Number(req.query.site_id || req.query.restaurant_id || rid(req) || 0);
   if (isOrgAdmin(req.user)) {
-    if (siteFilter) {
-      const rows = await query(
-        `SELECT ${USER_COLS} ${join}
-         WHERE u.organization_id=$1
-           AND COALESCE(u.site_id, u.restaurant_id)=$2
-           AND u.role <> 'super_admin'
-         ORDER BY u.id`,
-        [req.user.organization_id, siteFilter]
-      );
-      return res.json(rows.rows);
-    }
     const rows = await query(
       `SELECT ${USER_COLS} ${join} WHERE u.organization_id=$1 AND u.role <> 'super_admin' ORDER BY u.id`,
       [req.user.organization_id]

@@ -8,7 +8,7 @@ import { canAccessPath, homePath } from "../modules/roles";
 import { consumeReturnPath } from "../lib/platform";
 
 export default function Login({ code }) {
-  const { login, logout, user } = useAuth();
+  const { login, user } = useAuth();
   const navigate = useNavigate();
   const { orgCode: paramCode } = useParams();
   const desktopTdcp = Boolean(window.tdcpDesktop?.tdcpOnly) || /Electron/i.test(navigator.userAgent || "");
@@ -44,22 +44,21 @@ export default function Login({ code }) {
     setBusy(true);
     setError("");
     try {
-      const signedIn = await login(email, password, desktopTdcp ? "tdcp" : org?.code || orgCode, "org");
-      if (desktopTdcp && (signedIn?.role === "super_admin" || signedIn?.role === "admin")) {
-        logout();
-        setError("This app is for TDCP accounts only.");
-        return;
-      }
+      const signedIn = await login(email, password, desktopTdcp ? "tdcp" : org?.code || orgCode, desktopTdcp ? "auto" : "org");
       const back = consumeReturnPath("");
       navigate(back && canAccessPath(signedIn, back) ? back : homePath(signedIn));
     } catch (err) {
+      const body = err.response?.data;
+      const serverMessage = body && typeof body === "object" ? body.message : "";
       setError(
-        err.response?.data?.message ||
-          (err.request && !err.response
+        serverMessage ||
+          (!err.response
             ? desktopTdcp
-              ? "You are offline. Sign in when the connection is back. Orders already saved on this device will sync to the admin dashboard."
+              ? "Cannot reach the sign-in service. Start MySQL, then open TDCP RMS again."
               : "Cannot reach the API. Start the server with npm run dev from the project root."
-            : "Unable to sign in")
+            : err.response.status === 401
+              ? "Invalid email or password"
+              : "Unable to sign in")
       );
     } finally {
       setBusy(false);

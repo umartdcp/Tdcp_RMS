@@ -64,7 +64,10 @@ export function oid(req) {
 }
 
 export function rid(req) {
-  return req.tenant?.siteId ?? req.user?.site_id ?? null;
+  if (req.tenant && Object.prototype.hasOwnProperty.call(req.tenant, "siteId")) {
+    return req.tenant.siteId ?? null;
+  }
+  return req.user?.site_id ?? null;
 }
 
 export function requireSite(req, res, next) {

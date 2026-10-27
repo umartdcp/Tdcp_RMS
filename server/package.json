@@ -1,6 +1,7 @@
 {
   "name": "tdcp-rms-server",
   "private": true,
+  "type": "module",
   "version": "1.0.0",
   "scripts": {
     "dev": "node --watch src/index.js",

@@ -1,4 +1,5 @@
 import jwt from "jsonwebtoken";
+import { bindRequestDatabase } from "../db.js";
 
 const secret = () => process.env.JWT_SECRET || "tdcp-rms-dev-secret-change-me";
 
@@ -21,7 +22,9 @@ export function authRequired(req, res, next) {
       site_id: payload.site_id ?? payload.restaurant_id ?? null,
       restaurant_id: payload.restaurant_id ?? payload.site_id ?? null,
     };
-    next();
+    bindRequestDatabase(req)
+      .then((enter) => enter(() => next()))
+      .catch(next);
   } catch {
     return res.status(401).json({ message: "Invalid or expired token" });
   }

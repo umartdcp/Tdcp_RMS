@@ -1,12 +1,13 @@
 import bcrypt from "bcryptjs";
 import { Router } from "express";
-import { query } from "../db.js";
+import { query, eachOrganization, withOrganization } from "../db.js";
 import { authRequired, requireRole } from "../middleware/auth.js";
 import { attachTenant, oid, rid } from "../tenant.js";
 import { isOrgAdmin, isSuperAdmin } from "../modules/roles.js";
 import { audit } from "../modules/audit.js";
 import { canDeleteTdcpSite, removeSite, tdcpOrganizationId } from "../modules/siteDelete.js";
 import { withSafeLogo } from "../orgBranding.js";
+import { provisionOrganizationDatabase } from "../initDb.js";
 
 const router = Router();
 
@@ -34,20 +35,38 @@ router.use(attachTenant);
 
 router.get("/platform/summary", requireRole("super_admin", "admin"), async (_req, res) => {
   const orgs = await query(`SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE is_active)::int AS active FROM organizations`);
-  const sites = await query(`SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE is_active)::int AS active FROM sites`);
-  const users = await query(`SELECT COUNT(*)::int AS total FROM users`);
-  const orders = await query(
-    `SELECT COUNT(*)::int AS total, COALESCE(SUM(total),0)::float AS revenue
-     FROM orders WHERE payment_status='paid'`
+  const parts = await eachOrganization(async () => {
+    const sites = await query(`SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE is_active)::int AS active FROM sites`);
+    const users = await query(`SELECT COUNT(*)::int AS total FROM users`);
+    const orders = await query(
+      `SELECT COUNT(*)::int AS total, COALESCE(SUM(total),0)::float AS revenue FROM orders WHERE payment_status='paid'`
+    );
+    return [{
+      sites: Number(sites.rows[0].total) || 0,
+      active_sites: Number(sites.rows[0].active) || 0,
+      users: Number(users.rows[0].total) || 0,
+      orders: Number(orders.rows[0].total) || 0,
+      revenue: Number(orders.rows[0].revenue) || 0,
+    }];
+  });
+  const totals = parts.reduce(
+    (sum, row) => ({
+      sites: sum.sites + row.sites,
+      active_sites: sum.active_sites + row.active_sites,
+      users: sum.users + row.users,
+      orders: sum.orders + row.orders,
+      revenue: sum.revenue + row.revenue,
+    }),
+    { sites: 0, active_sites: 0, users: 0, orders: 0, revenue: 0 }
   );
   res.json({
     organizations: orgs.rows[0].total,
     active_organizations: orgs.rows[0].active,
-    sites: sites.rows[0].total,
-    active_sites: sites.rows[0].active,
-    users: users.rows[0].total,
-    orders: orders.rows[0].total,
-    revenue: orders.rows[0].revenue,
+    sites: totals.sites,
+    active_sites: totals.active_sites,
+    users: totals.users,
+    orders: totals.orders,
+    revenue: totals.revenue,
   });
 });
 
@@ -59,11 +78,22 @@ const ORG_LIST_SQL = `
 `;
 
 router.get("/organizations", requireRole("super_admin", "admin", "org_admin"), async (req, res) => {
-  if (isOrgAdmin(req.user) && !isSuperAdmin(req.user)) {
-    const rows = await query(`${ORG_LIST_SQL} WHERE o.id=$1`, [req.user.organization_id]);
-    return res.json(rows.rows);
+  const sql = isOrgAdmin(req.user) && !isSuperAdmin(req.user)
+    ? `${ORG_LIST_SQL} WHERE o.id=$1`
+    : `${ORG_LIST_SQL} ORDER BY o.name`;
+  const params = isOrgAdmin(req.user) && !isSuperAdmin(req.user) ? [req.user.organization_id] : [];
+  const rows = (await query(sql, params)).rows;
+  for (const org of rows) {
+    if (!org.db_name) continue;
+    const counts = await withOrganization(org.db_name, async () => {
+      const sites = await query(`SELECT COUNT(*)::int AS c FROM sites`);
+      const users = await query(`SELECT COUNT(*)::int AS c FROM users`);
+      return { site_count: Number(sites.rows[0].c) || 0, user_count: Number(users.rows[0].c) || 0 };
+    });
+    org.site_count = counts.site_count;
+    org.user_count = counts.user_count;
   }
-  res.json((await query(`${ORG_LIST_SQL} ORDER BY o.name`)).rows);
+  res.json(rows);
 });
 
 router.get("/organizations/:id", requireRole("super_admin", "admin", "org_admin"), async (req, res) => {
@@ -125,9 +155,11 @@ router.post("/organizations", requireRole("super_admin", "admin"), async (req, r
         ]
       )
     ).rows[0];
+    await provisionOrganizationDatabase(row);
     audit(req, { action: "create_organization", entity: "organization", entityId: row.id, details: orgCode });
     let admin = null;
     let site = null;
+    await withOrganization(row.db_name, async () => {
     const siteName = String(site_name || "").trim();
     if (siteName) {
       const siteCode = String(site_code || siteName)
@@ -163,6 +195,7 @@ router.post("/organizations", requireRole("super_admin", "admin"), async (req, r
         )
       ).rows[0];
     }
+    });
     res.status(201).json({ ...row, site, admin });
   } catch (err) {
     if (err.code === "23505") return res.status(409).json({ message: "That organization code already exists." });
@@ -219,8 +252,33 @@ router.patch("/organizations/:id", requireRole("super_admin", "admin", "org_admi
       ]
     );
     if (!result.rows[0]) return res.status(404).json({ message: "Organization not found" });
+    const updated = result.rows[0];
+    if (updated.db_name) {
+      await withOrganization(updated.db_name, () =>
+        query(
+          `UPDATE organizations SET code=$1, name=$2, logo_url=$3, favicon_url=$4, primary_color=$5, secondary_color=$6, background_color=$7, text_color=$8, app_name=$9, address=$10, phone=$11, email=$12, is_active=$13, db_name=$14, updated_at=NOW() WHERE id=$15`,
+          [
+            updated.code,
+            updated.name,
+            updated.logo_url,
+            updated.favicon_url,
+            updated.primary_color,
+            updated.secondary_color,
+            updated.background_color,
+            updated.text_color,
+            updated.app_name,
+            updated.address,
+            updated.phone,
+            updated.email,
+            updated.is_active,
+            updated.db_name,
+            updated.id,
+          ]
+        )
+      );
+    }
     audit(req, { action: "update_organization", entity: "organization", entityId: id });
-    res.json(result.rows[0]);
+    res.json(updated);
   } catch (err) {
     if (err.code === "23505") return res.status(409).json({ message: "That organization code already exists." });
     throw err;
@@ -236,16 +294,17 @@ router.get("/organizations/:id/sites", requireRole("super_admin", "admin", "org_
 });
 
 router.get("/sites", requireRole("super_admin", "admin", "org_admin", "manager"), async (req, res) => {
-  if (isSuperAdmin(req.user)) {
-    return res.json(
+  if (isSuperAdmin(req.user) && !Number(req.query.organization_id || 0)) {
+    const rows = await eachOrganization(async (org) =>
       (
         await query(
           `SELECT s.*, o.name AS organization_name, o.code AS organization_code
            FROM sites s JOIN organizations o ON o.id = s.organization_id
-           ORDER BY o.name, s.name`
+           ORDER BY s.name`
         )
-      ).rows
+      ).rows.map((site) => ({ ...site, organization_name: org.name, organization_code: org.code }))
     );
+    return res.json(rows);
   }
   if (isOrgAdmin(req.user)) {
     return res.json(
