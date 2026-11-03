@@ -92,9 +92,20 @@ function pathOfKey(key) {
   return String(key).replace(/^GET\s+/, "").split("?")[0];
 }
 
+async function overlayOutbox(data) {
+  let next = data;
+  const items = await withStore("outbox", "readonly", (store) => request(store.getAll()));
+  for (const item of items) {
+    const preview = item.preview || previewBody(item.method, item.url, item.data, item.localId);
+    next = applyToCached(next, item.method, item.url, preview);
+  }
+  return next;
+}
+
 export async function rememberGet(config, data) {
   try {
-    await withStore("cache", "readwrite", (store) => request(store.put(data, cacheKey(config))));
+    const next = await overlayOutbox(data);
+    await withStore("cache", "readwrite", (store) => request(store.put(next, cacheKey(config))));
   } catch {
     /* cache is best-effort */
   }
@@ -151,8 +162,19 @@ function listOp(list, method, id, preview) {
   return rows.map((row) => (row && String(row.id) === id ? { ...row, ...preview, id: row.id } : row));
 }
 
+function imageTarget(url) {
+  const match = String(url || "").split("?")[0].match(/^\/(?:restaurants|sites|menu)\/([^/]+)\/image$/);
+  return match ? match[1] : "";
+}
+
 function applyToCached(data, method, url, preview) {
   const path = String(url || "").split("?")[0];
+  const imageId = imageTarget(url);
+  if (imageId && Array.isArray(data)) {
+    const image = preview?.image_url || preview?.image_base64 || "";
+    if (!image) return data;
+    return data.map((row) => (String(row?.id) === imageId ? { ...row, image_url: image } : row));
+  }
   const id = entityId(url, preview);
   if (data && Array.isArray(data.categories) && Array.isArray(data.items)) {
     if (path.includes("/categories")) {
@@ -188,15 +210,21 @@ async function mergeCaches(url, method, preview) {
   const tx = db.transaction("cache", "readwrite");
   const store = tx.objectStore("cache");
   const keys = await request(store.getAllKeys());
+  let matched = false;
   keys.forEach((key) => {
     const text = String(key);
     const path = text.replace(/^GET\s+/, "").split("?")[0];
     if (path !== root && !path.startsWith(`${root}/`)) return;
+    matched = true;
     const getReq = store.get(key);
     getReq.onsuccess = () => {
       store.put(applyToCached(getReq.result, method, url, preview), key);
     };
   });
+  if (!matched) {
+    const seeded = seedCache(method, url, preview);
+    if (seeded) store.put(seeded.data, seeded.key);
+  }
   await txDone(tx);
 }
 
@@ -219,8 +247,20 @@ function orderPreview(data, localId) {
   };
 }
 
+function seedCache(method, url, preview) {
+  const path = String(url || "").split("?")[0];
+  if (method !== "post" || !preview) return null;
+  const lists = ["/users", "/orders", "/restaurants", "/sites", "/customers", "/tables"];
+  if (!lists.includes(path)) return null;
+  return { key: `GET ${path}`, data: [preview] };
+}
+
 function previewBody(method, url, data, localId) {
   const path = String(url || "").split("?")[0];
+  const imageId = imageTarget(path);
+  if (method === "post" && imageId) {
+    return { id: imageId, image_url: data?.image_base64 || data?.image_url || "", offline: true };
+  }
   if (method === "post" && path === "/orders") return orderPreview(data, localId);
   if (method === "post") return { ...(data || {}), id: localId, offline: true };
   if (method === "patch" || method === "put") return { ...(data || {}), offline: true };
@@ -285,6 +325,7 @@ export async function queueRequest(config) {
         data,
         params: config.params || {},
         localId,
+        preview,
         createdAt: Date.now(),
       })
     )
@@ -294,7 +335,8 @@ export async function queueRequest(config) {
   } catch {
     /* lists refresh after sync */
   }
-  publish({ pending: await pendingCount(), online: false, lastError: "" });
+  publish({ pending: await pendingCount(), lastError: "" });
+  window.dispatchEvent(new Event("tdcp-data-synced"));
   if (url.includes("/orders")) window.dispatchEvent(new Event("tdcp-notify-refresh"));
   return { data: preview, status: 202, statusText: "Queued", headers: {}, config };
 }
@@ -360,6 +402,10 @@ export async function flushOutbox() {
       } catch (err) {
         if (isOfflineFailure(err)) {
           publish({ online: false, lastError: "Connection dropped while syncing. Saved changes are still on this device." });
+          break;
+        }
+        if (err.response?.status === 401) {
+          publish({ lastError: "Sign in again while online so the saved changes can sync." });
           break;
         }
         await withStore("outbox", "readwrite", (store) => request(store.delete(item.id)));

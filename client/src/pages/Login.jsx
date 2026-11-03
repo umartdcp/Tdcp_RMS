@@ -54,7 +54,7 @@ export default function Login({ code }) {
         serverMessage ||
           (!err.response
             ? desktopTdcp
-              ? "Cannot reach the sign-in service. Start MySQL, then open TDCP RMS again."
+              ? "No connection to KitchenIQ. Connect once to sign in. After that, this computer keeps working offline."
               : "Cannot reach the API. Start the server with npm run dev from the project root."
             : err.response.status === 401
               ? "Invalid email or password"

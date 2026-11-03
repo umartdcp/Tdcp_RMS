@@ -138,6 +138,9 @@ export default function UsersPage({ organizationId, sites: sitesProp, organizati
 
   useEffect(() => {
     load();
+    const onSync = () => load();
+    window.addEventListener("tdcp-data-synced", onSync);
+    return () => window.removeEventListener("tdcp-data-synced", onSync);
   }, [organizationId, activeRestaurantId, me?.site_id, me?.restaurant_id]);
 
   const stats = useMemo(

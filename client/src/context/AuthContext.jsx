@@ -3,6 +3,7 @@ import api, { warmWorkingSet } from "../api";
 import { applyBrandTheme, clearBrandTheme } from "../lib/brandTheme";
 import { SERVEX } from "../lib/platform";
 import { canSwitchSites } from "../modules/roles";
+import { readOfflineLogin, saveOfflineLogin } from "../lib/offlineLogin";
 
 const AuthContext = createContext(null);
 const ACTIVE_KEY = "tdcp_active_restaurant";
@@ -170,19 +171,41 @@ export function AuthProvider({ children }) {
         }
       },
       login: async (email, password, organizationCode, portal) => {
-        const { data } = await api.post("/auth/login", {
-          email,
-          password,
-          organization_code: window.tdcpDesktop?.tdcpOnly || /Electron/i.test(navigator.userAgent || "") ? "tdcp" : organizationCode || undefined,
-          portal: window.tdcpDesktop?.tdcpOnly || /Electron/i.test(navigator.userAgent || "") ? "org" : portal || undefined,
-        });
+        const desktopTdcp = Boolean(window.tdcpDesktop?.tdcpOnly) || /Electron/i.test(navigator.userAgent || "");
+        let data;
+        try {
+          const response = await api.post("/auth/login", {
+            email,
+            password,
+            organization_code: desktopTdcp ? "tdcp" : organizationCode || undefined,
+            portal: desktopTdcp ? "org" : portal || undefined,
+          });
+          data = response.data;
+        } catch (err) {
+          const unreachable = !err.response || err.response.status === 503 || err.response.data?.code === "DB_OFFLINE";
+          const saved = unreachable ? await readOfflineLogin(email, password) : null;
+          if (!saved) {
+            if (unreachable) {
+              const error = new Error("Offline");
+              error.response = {
+                data: {
+                  message: desktopTdcp
+                    ? "No connection to KitchenIQ. Connect once to sign in. After that, users, photos and orders stay on this computer and sync when the connection is back."
+                    : err.response?.data?.message || "Cannot reach the sign-in service.",
+                },
+              };
+              throw error;
+            }
+            throw err;
+          }
+          data = saved;
+        }
         if (!data?.token || !data?.user?.email) {
           const error = new Error("Sign-in service is not running.");
-          error.response = { data: { message: "Sign-in service is not running. Start MySQL, then open TDCP RMS again." } };
+          error.response = { data: { message: "Sign-in did not return an account. Check the connection and try again." } };
           throw error;
         }
         const orgCode = String(data.organization?.code || "").toUpperCase();
-        const desktopTdcp = Boolean(window.tdcpDesktop?.tdcpOnly) || /Electron/i.test(navigator.userAgent || "");
         if (desktopTdcp && orgCode && orgCode !== "TDCP") {
           const error = new Error("This app is for TDCP accounts only.");
           error.response = { data: { message: "This app is for TDCP accounts only." } };
@@ -190,6 +213,7 @@ export function AuthProvider({ children }) {
         }
         persistSession(data);
         applySession(data);
+        if (!data.offline) await saveOfflineLogin(email, password, data);
         if (!canSwitchSites(data.user)) {
           const id = String(data.user.site_id || data.user.restaurant_id || "");
           localStorage.setItem(ACTIVE_KEY, id);
